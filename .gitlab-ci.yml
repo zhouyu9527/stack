@@ -8,6 +8,7 @@ variables:
     BASE_BRANCH: "master"
     OS_NAME: "linux"
     CACHE_S3_PREFIX: "stack"
+    S3_BUCKET: "commercialhaskell-gitlab-runner-pipeline-cache"
 
 build:
   stage: build
