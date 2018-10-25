@@ -1,4 +1,4 @@
-image: registry.gitlab.com/commercialhaskell/pipeline-base-image:34215613
+image: registry.gitlab.com/commercialhaskell/pipeline-base-image:34305074
 
 cache:
   key: "$CI_BUILD_NAME"
