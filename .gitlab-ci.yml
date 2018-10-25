@@ -1,16 +1,13 @@
 image: registry.gitlab.com/commercialhaskell/pipeline-base-image:34305074
 
-cache:
-  key: "$CI_BUILD_NAME"
-  paths:
-    - .stack-work/
-    - .stack-root/
-
 stages:
   - build
 
 variables:
     STACK_ROOT: "${CI_PROJECT_DIR}/.stack-root"
+    BASE_BRANCH: "master"
+    OS_NAME: "linux"
+    CACHE_S3_PREFIX: "stack"
 
 build:
   stage: build
@@ -19,7 +16,25 @@ build:
     - stable
   script: &build
     - export PATH=$HOME/.local/bin:$PATH
+    - cache-s3 --prefix="${CACHE_S3_PREFIX}"
+               --git-branch="${CI_BUILD_REF_NAME}"
+               --suffix="${OS_NAME}"
+               restore stack --base-branch="${BASE_BRANCH}";
+      cache-s3 --prefix="${CACHE_S3_PREFIX}"
+               --git-branch="${CI_BUILD_REF_NAME}"
+               --suffix="${OS_NAME}"
+               restore stack work --base-branch="${BASE_BRANCH}";
     - stack etc/scripts/release.hs check
+    - if [ "${CI_BUILD_REF_NAME}" = "${BASE_BRANCH}" ]; then
+        cache-s3 --prefix="${CACHE_S3_PREFIX}"
+                 --git-branch="${CI_BUILD_REF_NAME}"
+                 --suffix="${OS_NAME}"
+                 save stack;
+      fi;
+      cache-s3 --prefix="${CACHE_S3_PREFIX}"
+               --git-branch="${CI_BUILD_REF_NAME}"
+               --suffix="${OS_NAME}"
+               save stack work
 
 manual_build:
   stage: build
