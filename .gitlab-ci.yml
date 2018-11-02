@@ -1,4 +1,4 @@
-image: registry.gitlab.com/commercialhaskell/pipeline-base-image:34985367
+image: registry.gitlab.com/commercialhaskell/pipeline-base-image:35231029
 
 stages:
   - build
