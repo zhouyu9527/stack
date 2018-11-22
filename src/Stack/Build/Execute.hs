@@ -80,6 +80,7 @@ import           Stack.Types.GhcPkgId
 import           Stack.Types.NamedComponent
 import           Stack.Types.Package
 import           Stack.Types.Runner
+import           Stack.Types.SourceMap
 import           Stack.Types.Version
 import qualified System.Directory as D
 import           System.Environment (getExecutablePath)
@@ -292,8 +293,10 @@ getSetupExe setupHs setupShimHs tmpdir = do
               let pc = setStdout (useHandleOpen stderr) pc0
               runProcess_ pc)
                 `catch` \ece -> do
+                    implicitlyAdded <- view $
+                        envConfigL.to envConfigSourceMap.to smTargets.to smtDeps.to Map.keys
                     compilerPath <- getCompilerPath wc
-                    throwM $ SetupHsBuildFailure (eceExitCode ece) Nothing compilerPath args Nothing []
+                    throwM $ SetupHsBuildFailure (eceExitCode ece) Nothing compilerPath args implicitlyAdded Nothing []
             when (wc == Ghcjs) $ renameDir tmpJsExePath jsExePath
             renameFile tmpExePath exePath
             return $ Just exePath
@@ -1138,11 +1141,14 @@ withSingleContext ActionContext {..} ExecuteEnv {..} task@Task {..} mdeps msuffi
                                         .| CT.decodeUtf8Lenient
                                         .| mungeBuildOutput stripTHLoading makeAbsolute pkgDir compilerVer
                                         .| CL.consume
+                        implicitlyAdded <- view $
+                            envConfigL.to envConfigSourceMap.to smTargets.to smtDeps.to Map.keys
                         throwM $ CabalExitedUnsuccessfully
                             (eceExitCode ece)
                             taskProvides
                             exeName
                             fullArgs
+                            implicitlyAdded
                             mlogFile
                             bss
                   where

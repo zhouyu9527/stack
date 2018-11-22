@@ -99,6 +99,7 @@ data StackBuildException
         PackageIdentifier
         (Path Abs File)  -- cabal Executable
         [String]         -- cabal arguments
+        [PackageName] -- implicitly added packages
         (Maybe (Path Abs File)) -- logfiles location
         [Text]     -- log contents
   | SetupHsBuildFailure
@@ -106,6 +107,7 @@ data StackBuildException
         (Maybe PackageIdentifier) -- which package's custom setup, is simple setup if Nothing
         (Path Abs File)  -- ghc Executable
         [String]         -- ghc arguments
+        [PackageName] -- implicitly added packages
         (Maybe (Path Abs File)) -- logfiles location
         [Text]     -- log contents
   | ExecutionFailure [SomeException]
@@ -221,10 +223,10 @@ instance Show StackBuildException where
     show (TestSuiteTypeUnsupported interface) =
               "Unsupported test suite type: " <> show interface
      -- Supressing duplicate output
-    show (CabalExitedUnsuccessfully exitCode taskProvides' execName fullArgs logFiles bss) =
-      showBuildError False exitCode (Just taskProvides') execName fullArgs logFiles bss
-    show (SetupHsBuildFailure exitCode mtaskProvides execName fullArgs logFiles bss) =
-      showBuildError True exitCode mtaskProvides execName fullArgs logFiles bss
+    show (CabalExitedUnsuccessfully exitCode taskProvides' execName fullArgs added logFiles bss) =
+      showBuildError False exitCode (Just taskProvides') execName fullArgs added logFiles bss
+    show (SetupHsBuildFailure exitCode mtaskProvides execName fullArgs added logFiles bss) =
+      showBuildError True exitCode mtaskProvides execName fullArgs added logFiles bss
     show (ExecutionFailure es) = intercalate "\n\n" $ map show es
     show (LocalPackageDoesn'tMatchTarget name localV requestedV) = concat
         [ "Version for local package "
@@ -340,10 +342,11 @@ showBuildError
   -> Maybe PackageIdentifier
   -> Path Abs File
   -> [String]
+  -> [PackageName]
   -> Maybe (Path Abs File)
   -> [Text]
   -> String
-showBuildError isBuildingSetup exitCode mtaskProvides execName fullArgs logFiles bss =
+showBuildError isBuildingSetup exitCode mtaskProvides execName fullArgs implicitlyAdded logFiles bss =
   let fullCmd = unwords
               $ dropQuotes (toFilePath execName)
               : map (T.unpack . showProcessArgDebug) fullArgs
@@ -359,6 +362,15 @@ showBuildError isBuildingSetup exitCode mtaskProvides execName fullArgs logFiles
      "    Process exited with code: " ++ show exitCode ++
      (if exitCode == ExitFailure (-9)
           then " (THIS MAY INDICATE OUT OF MEMORY)"
+          else "") ++
+     (if not (null implicitlyAdded)
+          then unlines
+              [ "    NOTE: The following packages were added implicitly from the command line:"
+              , "      " <> intercalate ", " (map packageNameString implicitlyAdded)
+              , "    Since they are not part of a tested snapshot, they may have caused this build failure."
+              , "    Please see https://github.com/commercialhaskell/stack/issues/4336" <>
+                        " for information on workarounds"
+              ]
           else "") ++
      logLocations ++
      (if null bss

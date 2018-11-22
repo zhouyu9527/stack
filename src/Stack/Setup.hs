@@ -272,6 +272,14 @@ setupEnv needTargets boptsCLI mResolveMissingGHC = do
 
     let haddockDeps = shouldHaddockDeps (configBuild config)
     targets <- parseTargets needTargets haddockDeps boptsCLI smActual
+    let targetDepPackages = Map.keys $ smtDeps targets
+    unless (null targetDepPackages) $ do
+      let implicitPackages = intercalate ", " $ map packageNameString targetDepPackages
+      logWarn $ "NOTE: The following packages were added implicitly from the command line:"
+      logWarn $ "  " <> RIO.display (T.pack implicitPackages)
+      logWarn $ "Since they are not part of a tested snapshot, they may not compile correctly."
+      logWarn $ "If a build failure occurs, please see https://github.com/commercialhaskell/stack/issues/4336" <>
+                " for information on workarounds"
     sourceMap <- loadSourceMap targets boptsCLI smActual
     let envConfig0 = EnvConfig
             { envConfigBuildConfig = bc
