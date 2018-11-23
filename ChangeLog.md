@@ -75,6 +75,8 @@ Other enhancements:
 * Use en_US.UTF-8 locale by default in pure Nix mode so programs won't
   crash because of Unicode in their output
   [#4095](https://github.com/commercialhaskell/stack/issues/4095)
+* Add `--tree` to `ls dependencies` to list dependencies as tree.
+  [#4101](https://github.com/commercialhaskell/stack/issues/4101)
 
 Bug fixes:
 
@@ -94,7 +96,12 @@ Bug fixes:
 * Fix for git packages to update submodules to the correct state. See
   [#4314](https://github.com/commercialhaskell/stack/pull/4314)
 * Add `--cabal-files` flag to `stack ide targets` command.
-
+* Don't download ghc when using `stack clean`.
+* Support loading in GHCi definitions from symlinked C files. Without this
+  patch, Stack will try to find object files in the directory pointed to
+  by symlinks, while GCC will produce the object files in the original
+  directory. See
+  [#4402](https://github.com/commercialhaskell/stack/pull/4402)
 
 ## v1.9.1
 
