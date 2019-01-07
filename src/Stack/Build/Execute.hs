@@ -28,6 +28,7 @@ import           Crypto.Hash
 import           Data.Attoparsec.Text hiding (try)
 import qualified Data.ByteArray as Mem (convert)
 import qualified Data.ByteString as S
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Base64.URL as B64URL
 import           Data.Char (isSpace)
 import           Conduit
@@ -1792,16 +1793,19 @@ singleTest topts testsToRun ac ee task installedMap = do
 
                         ec <- withWorkingDir (toFilePath pkgDir) $
                           proc (toFilePath exePath) args $ \pc0 -> do
-                            let pc = setStdin createPipe
+                            stdinBS <-
+                              if isTestTypeLib
+                                then do
+                                  logPath <- buildLogPath package (Just stestName)
+                                  ensureDir (parent logPath)
+                                  pure $ BL.fromStrict
+                                       $ encodeUtf8 $ fromString $ show (logPath, testName)
+                                else pure mempty
+                            let pc = setStdin (byteStringInput stdinBS)
                                    $ output setStdout
                                    $ output setStderr
                                      pc0
-                            withProcess pc $ \p -> do
-                              when isTestTypeLib $ do
-                                logPath <- buildLogPath package (Just stestName)
-                                ensureDir (parent logPath)
-                                liftIO $ hPutStr (getStdin p) $ show (logPath, testName)
-                              waitExitCode p
+                            runProcess pc
                         -- Add a trailing newline, incase the test
                         -- output didn't finish with a newline.
                         case outputType of

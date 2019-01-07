@@ -108,6 +108,8 @@ Bug fixes:
   [#4402](https://github.com/commercialhaskell/stack/pull/4402)
 * Fix handling of GitHub and URL templates on Windows. See
   [commercialhaskell/stack#4394](https://github.com/commercialhaskell/stack/issues/4394)
+* Ensure the detailed-0.9 type tests work.
+  See [#4453](https://github.com/commercialhaskell/stack/issues/4453).
 
 ## v1.9.3
 
