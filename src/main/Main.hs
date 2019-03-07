@@ -723,15 +723,21 @@ updateCmd () go =
   (\_lk -> void (updateHackageIndex Nothing))
 
 upgradeCmd :: UpgradeOpts -> GlobalOpts -> IO ()
-upgradeCmd upgradeOpts' go = withGlobalConfigAndLock go $
-    upgrade (globalConfigMonoid go)
-            (globalResolver go)
+upgradeCmd upgradeOpts' go =
+  case globalResolver go of
+    Just _ -> withRunnerGlobal go $ do
+      logError "You cannot use the --resolver option with the upgrade command"
+      liftIO exitFailure
+    Nothing ->
+      withGlobalConfigAndLock go $
+      upgrade
+        (globalConfigMonoid go)
 #ifdef USE_GIT_INFO
-            (either (const Nothing) (Just . giHash) $$tGitInfoCwdTry)
+        (either (const Nothing) (Just . giHash) $$tGitInfoCwdTry)
 #else
-            Nothing
+        Nothing
 #endif
-            upgradeOpts'
+        upgradeOpts'
 
 -- | Upload to Hackage
 uploadCmd :: SDistOpts -> GlobalOpts -> IO ()
@@ -1004,7 +1010,7 @@ dockerCleanupCmd cleanupOpts go@GlobalOpts{..} =
 
 cfgSetCmd :: ConfigCmd.ConfigCmdSet -> GlobalOpts -> IO ()
 cfgSetCmd co go@GlobalOpts{..} =
-    withMiniConfigAndLock
+    withGlobalConfigAndLock
         go
         (cfgCmdSet go co)
 
@@ -1026,12 +1032,12 @@ imgDockerCmd (rebuild,images) go@GlobalOpts{..} = withLoadConfig go $ \lc -> do
 initCmd :: InitOpts -> GlobalOpts -> IO ()
 initCmd initOpts go = do
     pwd <- getCurrentDir
-    withMiniConfigAndLock go (initProject IsInitCmd pwd initOpts (globalResolver go))
+    withGlobalConfigAndLock go (initProject IsInitCmd pwd initOpts (globalResolver go))
 
 -- | Create a project directory structure and initialize the stack config.
 newCmd :: (NewOpts,InitOpts) -> GlobalOpts -> IO ()
 newCmd (newOpts,initOpts) go@GlobalOpts{..} =
-    withMiniConfigAndLock go $ do
+    withGlobalConfigAndLock go $ do
         dir <- new newOpts (forceOverwrite initOpts)
         exists <- doesFileExist $ dir </> stackDotYaml
         when (forceOverwrite initOpts || not exists) $

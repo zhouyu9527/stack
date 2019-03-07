@@ -55,7 +55,7 @@ import           Distribution.System (OS (..), Platform (..), buildPlatform, Arc
 import qualified Distribution.Text
 import           Distribution.Version (simplifyVersionRange, mkVersion')
 import           GHC.Conc (getNumProcessors)
-import           Lens.Micro ((.~), lens)
+import           Lens.Micro ((.~))
 import           Network.HTTP.StackClient (httpJSON, parseUrlThrow, getResponseBody)
 import           Options.Applicative (Parser, strOption, long, help)
 import qualified Pantry.SHA256 as SHA256
@@ -83,7 +83,6 @@ import           System.Console.ANSI (hSupportsANSIWithoutEmulation)
 import           System.Environment
 import           System.PosixCompat.Files (fileOwner, getFileStatus)
 import           System.PosixCompat.User (getEffectiveUserID)
-import           RIO.PrettyPrint
 import           RIO.Process
 
 -- | If deprecated path exists, use it and print a warning.
@@ -235,7 +234,7 @@ configFromConfigMonoid
          clConnectionCount = fromFirst 8 configMonoidConnectionCount
          configHideTHLoading = fromFirst True configMonoidHideTHLoading
 
-         configGHCVariant0 = getFirst configMonoidGHCVariant
+         configGHCVariant = getFirst configMonoidGHCVariant
          configGHCBuild = getFirst configMonoidGHCBuild
          configInstallGHC = fromFirst True configMonoidInstallGHC
          configSkipGHCCheck = fromFirst False configMonoidSkipGHCCheck
@@ -282,7 +281,7 @@ configFromConfigMonoid
                          (dockerEnable configDocker || nixEnable configNix)
                          configMonoidSystemGHC)
 
-     when (isJust configGHCVariant0 && configSystemGHC) $
+     when (isJust configGHCVariant && configSystemGHC) $
          throwM ManualGHCVariantSettingsAreIncompatibleWithSystemGHC
 
      rawEnv <- liftIO getEnvironment
@@ -616,7 +615,6 @@ loadBuildConfig mproject maresolver mcompiler = do
     return BuildConfig
         { bcConfig = config
         , bcSMWanted = wanted
-        , bcGHCVariant = configGHCVariantDefault config
         , bcExtraPackageDBs = extraPackageDBs
         , bcStackYaml = stackYamlFP
         , bcImplicitGlobal =

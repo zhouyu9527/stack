@@ -250,10 +250,8 @@ data Config =
          -- ^ The platform we're building for, used in many directory names
          ,configPlatformVariant     :: !PlatformVariant
          -- ^ Variant of the platform, also used in directory names
-         ,configGHCVariant0         :: !(Maybe GHCVariant)
+         ,configGHCVariant          :: !(Maybe GHCVariant)
          -- ^ The variant of GHC requested by the user.
-         -- In most cases, use 'BuildConfig' or 'MiniConfig's version instead,
-         -- which will have an auto-detected default.
          ,configGHCBuild            :: !(Maybe CompilerBuild)
          -- ^ Override build of the compiler distribution (e.g. standard, gmp4, tinfo6)
          ,configLatestSnapshot      :: !Text
@@ -479,8 +477,6 @@ readStyles = parseStylesUpdateFromString <$> OA.readerAsk
 data BuildConfig = BuildConfig
     { bcConfig     :: !Config
     , bcSMWanted :: !SMWanted
-    , bcGHCVariant :: !GHCVariant
-      -- ^ The variant of GHC used to select a GHC bindist.
     , bcExtraPackageDBs :: ![Path Abs Dir]
       -- ^ Extra package databases
     , bcStackYaml  :: !(Path Abs File)
@@ -1754,13 +1750,13 @@ class HasPlatform env where
 
 -- | Class for environment values which have a GHCVariant
 class HasGHCVariant env where
-    ghcVariantL :: Lens' env GHCVariant
-    default ghcVariantL :: HasBuildConfig env => Lens' env GHCVariant
-    ghcVariantL = buildConfigL.ghcVariantL
+    ghcVariantL :: SimpleGetter env GHCVariant
+    default ghcVariantL :: HasConfig env => SimpleGetter env GHCVariant
+    ghcVariantL = configL.ghcVariantL
     {-# INLINE ghcVariantL #-}
 
 -- | Class for environment values that can provide a 'Config'.
-class (HasPlatform env, HasProcessContext env, HasPantryConfig env, HasTerm env, HasRunner env) => HasConfig env where
+class (HasPlatform env, HasGHCVariant env, HasProcessContext env, HasPantryConfig env, HasTerm env, HasRunner env) => HasConfig env where
     configL :: Lens' env Config
     default configL :: HasBuildConfig env => Lens' env Config
     configL = buildConfigL.lens bcConfig (\x y -> x { bcConfig = y })
@@ -1773,7 +1769,7 @@ class HasConfig env => HasBuildConfig env where
         envConfigBuildConfig
         (\x y -> x { envConfigBuildConfig = y })
 
-class (HasBuildConfig env, HasGHCVariant env) => HasEnvConfig env where
+class HasBuildConfig env => HasEnvConfig env where
     envConfigL :: Lens' env EnvConfig
 
 -----------------------------------
@@ -1793,8 +1789,10 @@ instance HasPlatform EnvConfig
 instance HasGHCVariant GHCVariant where
     ghcVariantL = id
     {-# INLINE ghcVariantL #-}
-instance HasGHCVariant BuildConfig where
-    ghcVariantL = lens bcGHCVariant (\x y -> x { bcGHCVariant = y })
+instance HasGHCVariant Config where
+    ghcVariantL = to $ fromMaybe GHCStandard . configGHCVariant
+instance HasGHCVariant LoadConfig
+instance HasGHCVariant BuildConfig
 instance HasGHCVariant EnvConfig
 
 instance HasProcessContext Config where

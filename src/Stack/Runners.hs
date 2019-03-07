@@ -7,7 +7,6 @@
 -- | Utilities for running stack commands.
 module Stack.Runners
     ( withGlobalConfigAndLock
-    , withMiniConfigAndLock
     , withBuildConfigAndLock
     , withDefaultBuildConfigAndLock
     , withBuildConfig
@@ -89,7 +88,7 @@ withGlobalConfigAndLock go@GlobalOpts{..} inner =
     withRunnerGlobal go $
     loadConfigMaybeProject
       globalConfigMonoid
-      Nothing
+      globalResolver
       LCSNoProject $ \lc ->
         withUserFileLock go (view stackRootL lc) $ \_lk ->
           runRIO (lcConfig lc) inner
@@ -235,16 +234,6 @@ withRunnerGlobal GlobalOpts{..} inner = do
         globalTermWidth
         (isJust globalReExecVersion)
         (\runner -> runRIO runner inner)
-
-withMiniConfigAndLock
-    :: GlobalOpts
-    -> RIO MiniConfig ()
-    -> IO ()
-withMiniConfigAndLock go@GlobalOpts{..} inner =
-  withRunnerGlobal go $
-  loadConfigMaybeProject globalConfigMonoid globalResolver LCSNoProject $ \lc -> do
-    let miniConfig = loadMiniConfig $ lcConfig lc
-    runRIO miniConfig inner
 
 -- | Unlock a lock file, if the value is Just
 munlockFile :: MonadIO m => Maybe FileLock -> m ()
