@@ -21,10 +21,8 @@
 -- probably default to behaving like cabal, possibly with spitting out
 -- a warning that "you should run `stk init` to make things better".
 module Stack.Config
-  (MiniConfig
-  ,loadConfig
+  (loadConfig
   ,loadConfigMaybeProject
-  ,loadMiniConfig
   ,loadConfigYaml
   ,packagesParser
   ,getImplicitGlobalProjectDir
@@ -401,41 +399,6 @@ getDefaultLocalProgramsBase configStackRoot configPlatform override =
                 return $ lad </> relDirUpperPrograms </> relDirStackProgName
           Nothing -> return defaultBase
       _ -> return defaultBase
-
--- | An environment with a subset of BuildConfig used for setup.
-data MiniConfig = MiniConfig -- TODO do we really need a whole extra data type?
-    { mcGHCVariant :: !GHCVariant
-    , mcConfig :: !Config
-    }
-instance HasConfig MiniConfig where
-    configL = lens mcConfig (\x y -> x { mcConfig = y })
-instance HasProcessContext MiniConfig where
-    processContextL = configL.processContextL
-instance HasPantryConfig MiniConfig where
-    pantryConfigL = configL.pantryConfigL
-instance HasPlatform MiniConfig
-instance HasGHCVariant MiniConfig where
-    ghcVariantL = lens mcGHCVariant (\x y -> x { mcGHCVariant = y })
-instance HasRunner MiniConfig where
-    runnerL = configL.runnerL
-instance HasLogFunc MiniConfig where
-    logFuncL = configL.logFuncL
-instance HasStylesUpdate MiniConfig where
-  stylesUpdateL = runnerL.stylesUpdateL
-instance HasTerm MiniConfig where
-  useColorL = runnerL.useColorL
-  termWidthL = runnerL.termWidthL
-
--- | Load the 'MiniConfig'.
-loadMiniConfig :: Config -> MiniConfig
-loadMiniConfig config = MiniConfig
-  { mcGHCVariant = configGHCVariantDefault config
-  , mcConfig = config
-  }
-
--- FIXME KILL THIS
-configGHCVariantDefault :: Config -> GHCVariant -- FIXME why not just use this as the HasGHCVariant instance for Config?
-configGHCVariantDefault = fromMaybe GHCStandard . configGHCVariant0
 
 -- Load the configuration, using environment variables, and defaults as
 -- necessary.
