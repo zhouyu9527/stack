@@ -433,6 +433,7 @@ loadMiniConfig config = MiniConfig
   , mcConfig = config
   }
 
+-- FIXME KILL THIS
 configGHCVariantDefault :: Config -> GHCVariant -- FIXME why not just use this as the HasGHCVariant instance for Config?
 configGHCVariantDefault = fromMaybe GHCStandard . configGHCVariant0
 

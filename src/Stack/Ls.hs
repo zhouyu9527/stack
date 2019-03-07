@@ -34,7 +34,7 @@ import RIO.PrettyPrint.DefaultStyles (defaultStyles)
 import RIO.PrettyPrint.Types (StyleSpec)
 import RIO.PrettyPrint.StylesUpdate (StylesUpdate (..))
 import Stack.Dot
-import Stack.Runners (loadConfigWithOpts, withDefaultBuildConfig, withBuildConfigDot)
+import Stack.Runners (withLoadConfig, withDefaultBuildConfig, withBuildConfigDot)
 import Stack.Options.DotParser (listDepsOptsParser)
 import Stack.Types.Config
 import System.Console.ANSI.Codes (SGR (Reset), setSGRCode, sgrToCode)
@@ -285,7 +285,7 @@ lsCmd lsOpts go =
                 Local -> withDefaultBuildConfig go (handleLocal lsOpts)
                 Remote -> withDefaultBuildConfig go (handleRemote lsOpts)
         LsDependencies depOpts -> listDependenciesCmd False depOpts go
-        LsStyles stylesOpts -> loadConfigWithOpts go (listStylesCmd stylesOpts)
+        LsStyles stylesOpts -> withLoadConfig go (listStylesCmd stylesOpts)
 
 -- | List the dependencies
 listDependenciesCmd :: Bool -> ListDepsOpts -> GlobalOpts -> IO ()

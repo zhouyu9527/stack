@@ -237,8 +237,6 @@ data StackDockerException
       -- ^ Version of @stack@ on host is too old for version in image.
     | ContainerStackTooOldException Version Version
       -- ^ Version of @stack@ in container/image is too old for version on host.
-    | CannotDetermineProjectRootException
-      -- ^ Can't determine the project root (where to put docker sandbox).
     | DockerNotInstalledException
       -- ^ @docker --version@ failed.
     | UnsupportedStackExeHostPlatformException
@@ -322,8 +320,6 @@ instance Show StackDockerException where
                ," is required; the container has "
                ,versionString containerVersion
                ,"."]
-    show CannotDetermineProjectRootException =
-        "Cannot determine project root directory for Docker sandbox."
     show DockerNotInstalledException =
         "Cannot find 'docker' in PATH.  Is Docker installed?"
     show UnsupportedStackExeHostPlatformException = concat

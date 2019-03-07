@@ -33,11 +33,11 @@ import           RIO.Process (processContextL, exec)
 -- Otherwise, runs the inner action.
 reexecWithOptionalShell
     :: HasConfig env
-    => Maybe (Path Abs Dir)
-    -> IO WantedCompiler
-    -> IO ()
+    => Path Abs Dir -- ^ project root
+    -> WantedCompiler
+    -> RIO env () -- ^ inner
     -> RIO env ()
-reexecWithOptionalShell mprojectRoot getCompilerVersion inner =
+reexecWithOptionalShell projectRoot compilerVersion inner =
   do config <- view configL
      inShell <- getInNixShell
      inContainer <- getInContainer
@@ -51,25 +51,24 @@ reexecWithOptionalShell mprojectRoot getCompilerVersion inner =
            exePath <- liftIO getExecutablePath
            return (exePath, args)
      if nixEnable (configNix config) && not inShell && (not isReExec || inContainer)
-        then runShellAndExit mprojectRoot getCompilerVersion getCmdArgs
-        else liftIO inner
+        then runShellAndExit projectRoot compilerVersion getCmdArgs
+        else inner
 
 
 runShellAndExit
     :: HasConfig env
-    => Maybe (Path Abs Dir)
-    -> IO WantedCompiler
+    => Path Abs Dir
+    -> WantedCompiler
     -> RIO env (String, [String])
     -> RIO env ()
-runShellAndExit mprojectRoot getCompilerVersion getCmdArgs = do
+runShellAndExit projectRoot compilerVersion getCmdArgs = do
    config <- view configL
    envOverride <- view processContextL
    local (set processContextL envOverride) $ do
      (cmnd,args) <- fmap (escape *** map escape) getCmdArgs
      mshellFile <-
-         traverse (resolveFile (fromMaybeProjectRoot mprojectRoot)) $
+         traverse (resolveFile projectRoot) $
          nixInitFile (configNix config)
-     compilerVersion <- liftIO getCompilerVersion
      inContainer <- getInContainer
      ghc <- either throwIO return $ nixCompiler compilerVersion
      let pkgsInConfig = nixPackages (configNix config)
@@ -129,25 +128,9 @@ escape str = "'" ++ foldr (\c -> if c == '\'' then
                                  else (c:)) "" str
                  ++ "'"
 
--- | Fail with friendly error if project root not set.
-fromMaybeProjectRoot :: Maybe (Path Abs Dir) -> Path Abs Dir
-fromMaybeProjectRoot = fromMaybe (impureThrow CannotDetermineProjectRoot)
-
 -- | Command-line argument for "nix"
 nixCmdName :: String
 nixCmdName = "nix"
 
 nixHelpOptName :: String
 nixHelpOptName = nixCmdName ++ "-help"
-
--- | Exceptions thrown by "Stack.Nix".
-data StackNixException
-  = CannotDetermineProjectRoot
-    -- ^ Can't determine the project root (location of the shell file if any).
-  deriving (Typeable)
-
-instance Exception StackNixException
-
-instance Show StackNixException where
-  show CannotDetermineProjectRoot =
-    "Cannot determine project root directory."

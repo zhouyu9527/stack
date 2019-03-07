@@ -22,7 +22,7 @@ import           Options.Applicative.Builder.Extra
 import           Stack.Build.Target (NeedTargets(..))
 import           Stack.Constants (ghcShowOptionsOutput)
 import           Stack.Options.GlobalParser (globalOptsFromMonoid)
-import           Stack.Runners (loadConfigWithOpts)
+import           Stack.Runners (withLoadConfig)
 import           Stack.Prelude
 import           Stack.Setup
 import           Stack.Types.Config
@@ -53,7 +53,7 @@ buildConfigCompleter inner = mkCompleter $ \inputRaw -> do
         _ -> do
             go' <- globalOptsFromMonoid False mempty
             let go = go' { globalLogLevel = LevelOther "silent" }
-            loadConfigWithOpts go $ \lc -> do
+            withLoadConfig go $ \lc -> do -- FIXME looks like something we can add to Runners
               bconfig <- liftIO $ lcLoadBuildConfig lc (globalCompiler go)
               envConfig <- runRIO bconfig (setupEnv AllowNoTargets defaultBuildOptsCLI Nothing)
               runRIO envConfig (inner input)

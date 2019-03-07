@@ -632,33 +632,47 @@ pathCmd keys go = Stack.Path.path withoutHaddocks withHaddocks keys
 
 
 setupCmd :: SetupCmdOpts -> GlobalOpts -> IO ()
-setupCmd sco@SetupCmdOpts{..} go@GlobalOpts{..} = loadConfigWithOpts go $ \lc -> do
-  when (isJust scoUpgradeCabal && nixEnable (configNix (lcConfig lc))) $ do
-    throwIO UpgradeCabalUnusable
-  withUserFileLock go (view stackRootL lc) $ \lk -> do
-    let getCompilerVersion = loadCompilerVersion go lc
-    runRIO (lcConfig lc) $
-      Docker.reexecWithOptionalContainer
-          (lcProjectRoot lc)
-          Nothing
-          (runRIO (lcConfig lc) $
-           Nix.reexecWithOptionalShell (lcProjectRoot lc) getCompilerVersion $ do
-           (wantedCompiler, compilerCheck, mstack) <-
-               case scoCompilerVersion of
-                   Just v -> return (v, MatchMinor, Nothing)
-                   Nothing -> do
-                       bc <- liftIO $ lcLoadBuildConfig lc globalCompiler
-                       return ( view wantedCompilerVersionL bc
-                              , configCompilerCheck (lcConfig lc)
-                              , Just $ view stackYamlL bc
-                              )
-           runRIO (loadMiniConfig (lcConfig lc)) $ setup sco wantedCompiler compilerCheck mstack
-           )
-          Nothing
-          (Just $ munlockFile lk)
+setupCmd sco@SetupCmdOpts{..} go@GlobalOpts{..} =
+  withActualBuildConfigAndLock go $ \lk -> do
 
+    -- FIXME time to just rip off the bandaid and kill UpgradeCabal
+    nixEnabled <- view $ configL.to (nixEnable . configNix)
+    when (isJust scoUpgradeCabal && nixEnabled) $ throwIO UpgradeCabalUnusable
+
+    compilerVersion <- view wantedCompilerVersionL
+    projectRoot <- view projectRootL
+    Docker.reexecWithOptionalContainer
+        projectRoot
+        Nothing
+        (Nix.reexecWithOptionalShell projectRoot compilerVersion $ do
+         (wantedCompiler, compilerCheck, mstack) <-
+           case scoCompilerVersion of
+             Just v -> pure (v, MatchMinor, Nothing)
+             Nothing -> (,,)
+               <$> pure compilerVersion
+               <*> view (configL.to configCompilerCheck)
+               <*> (Just <$> view stackYamlL)
+         setup sco wantedCompiler compilerCheck mstack
+         )
+        Nothing
+        (Just $ munlockFile lk)
+
+
+-- FIXME! Out of date comment
+--
+-- A runner specially built for the "stack clean" use case. For some
+-- reason (hysterical raisins?), all of the functions in this module
+-- which say BuildConfig actually work on an EnvConfig, while the
+-- clean command legitimately only needs a BuildConfig. At some point
+-- in the future, we could consider renaming everything for more
+-- consistency.
+--
+-- /NOTE/ This command always runs outside of the Docker environment,
+-- since it does not need to run any commands to get information on
+-- the project. This is a change as of #4480. For previous behavior,
+-- see issue #2010.
 cleanCmd :: CleanOpts -> GlobalOpts -> IO ()
-cleanCmd opts go = withCleanConfig go (clean opts)
+cleanCmd opts go = withActualBuildConfigAndLock go $ \_lock -> clean opts
 
 -- | Helper for build and install commands
 buildCmd :: BuildOptsCLI -> GlobalOpts -> IO ()
@@ -684,7 +698,8 @@ buildCmd opts go = do
                Build -> go -- Default case is just Build
 
 uninstallCmd :: [String] -> GlobalOpts -> IO ()
-uninstallCmd _ go = withConfigAndLock go $
+uninstallCmd _ go =
+    withRunnerGlobal go $
     prettyErrorL
       [ flow "stack does not manage installations in global locations."
       , flow "The only global mutation stack performs is executable copying."
@@ -695,14 +710,17 @@ uninstallCmd _ go = withConfigAndLock go $
 -- | Unpack packages to the filesystem
 unpackCmd :: ([String], Maybe Text) -> GlobalOpts -> IO ()
 unpackCmd (names, Nothing) go = unpackCmd (names, Just ".") go
-unpackCmd (names, Just dstPath) go = withConfigAndLock go $ do
+unpackCmd (names, Just dstPath) go =
+  withLoadConfigAndLock go $ \_lk -> do -- FIXME does this need to deal with Docker?
     mSnapshotDef <- mapM (makeConcreteResolver >=> flip loadResolver Nothing) (globalResolver go)
     dstPath' <- resolveDir' $ T.unpack dstPath
     unpackPackages mSnapshotDef dstPath' names
 
 -- | Update the package index
 updateCmd :: () -> GlobalOpts -> IO ()
-updateCmd () go = withConfigAndLock go (void (updateHackageIndex Nothing))
+updateCmd () go =
+  withLoadConfigAndLock go -- FIXME does this need to deal with Docker?
+  (\_lk -> void (updateHackageIndex Nothing))
 
 upgradeCmd :: UpgradeOpts -> GlobalOpts -> IO ()
 upgradeCmd upgradeOpts' go = withGlobalConfigAndLock go $
@@ -718,7 +736,8 @@ upgradeCmd upgradeOpts' go = withGlobalConfigAndLock go $
 -- | Upload to Hackage
 uploadCmd :: SDistOpts -> GlobalOpts -> IO ()
 uploadCmd (SDistOpts [] _ _ _ _ _ _) go =
-    withConfigAndLock go . prettyErrorL $
+    withRunnerGlobal go $
+    prettyErrorL $
         [ flow "To upload the current package, please run"
         , PP.style Shell "stack upload ."
         , flow "(with the period at the end)"
@@ -821,28 +840,26 @@ sdistCmd sdistOpts go =
 execCmd :: ExecOpts -> GlobalOpts -> IO ()
 execCmd ExecOpts {..} go@GlobalOpts{..} =
     case eoExtra of
-        ExecOptsPlain -> do
-          loadConfigWithOpts go $ \lc ->
-            withUserFileLock go (view stackRootL lc) $ \lk -> do
-              let getCompilerVersion = loadCompilerVersion go lc
-              runRIO (lcConfig lc) $
-                Docker.reexecWithOptionalContainer
-                    (lcProjectRoot lc)
-                    -- Unlock before transferring control away, whether using docker or not:
-                    (Just $ munlockFile lk)
-                    (withDefaultBuildConfigAndLock go $ \buildLock -> do
-                        config <- view configL
-                        menv <- liftIO $ configProcessContextSettings config plainEnvSettings
-                        withProcessContext menv $ do
-                            (cmd, args) <- case (eoCmd, eoArgs) of
-                                (ExecCmd cmd, args) -> return (cmd, args)
-                                (ExecRun, args) -> getRunCmd args
-                                (ExecGhc, args) -> return ("ghc", args)
-                                (ExecRunGhc, args) -> return ("runghc", args)
-                            munlockFile buildLock
-                            Nix.reexecWithOptionalShell (lcProjectRoot lc) getCompilerVersion (runRIO (lcConfig lc) $ exec cmd args))
-                    Nothing
-                    Nothing -- Unlocked already above.
+        ExecOptsPlain -> withActualBuildConfigAndLock go $ \lk -> do
+          compilerVersion <- view wantedCompilerVersionL
+          projectRoot <- view projectRootL
+          Docker.reexecWithOptionalContainer
+              projectRoot
+              -- Unlock before transferring control away, whether using docker or not:
+              (Just $ munlockFile lk)
+              (liftIO $ withDefaultBuildConfigAndLock go $ \buildLock -> do -- FIXME this has to be broken, right? we already did the loading!
+                  config <- view configL
+                  menv <- liftIO $ configProcessContextSettings config plainEnvSettings
+                  withProcessContext menv $ do
+                      (cmd, args) <- case (eoCmd, eoArgs) of
+                          (ExecCmd cmd, args) -> return (cmd, args)
+                          (ExecRun, args) -> getRunCmd args
+                          (ExecGhc, args) -> return ("ghc", args)
+                          (ExecRunGhc, args) -> return ("runghc", args)
+                      munlockFile buildLock
+                      Nix.reexecWithOptionalShell projectRoot compilerVersion (exec cmd args))
+              Nothing
+              Nothing -- Unlocked already above.
         ExecOptsEmbellished {..} -> do
             let targets = concatMap words eoPackages
                 boptsCLI = defaultBuildOptsCLI
@@ -957,7 +974,7 @@ ideTargetsCmd stream go =
 -- | Pull the current Docker image.
 dockerPullCmd :: () -> GlobalOpts -> IO ()
 dockerPullCmd _ go@GlobalOpts{..} =
-    loadConfigWithOpts go $ \lc ->
+    withLoadConfig go $ \lc ->
     -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
     withUserFileLock go (view stackRootL lc) $ \_ ->
      runRIO (lcConfig lc) $
@@ -966,16 +983,19 @@ dockerPullCmd _ go@GlobalOpts{..} =
 -- | Reset the Docker sandbox.
 dockerResetCmd :: Bool -> GlobalOpts -> IO ()
 dockerResetCmd keepHome go@GlobalOpts{..} =
-    loadConfigWithOpts go $ \lc ->
+    withLoadConfig go $ \lc ->
     -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
     withUserFileLock go (view stackRootL lc) $ \_ ->
-      runRIO (lcConfig lc) $
-        Docker.preventInContainer $ Docker.reset (lcProjectRoot lc) keepHome
+      case lcProjectRoot lc of
+        Nothing -> error "Cannot call docker reset without a project"
+        Just projectRoot ->
+          runRIO (lcConfig lc) $
+          Docker.preventInContainer $ Docker.reset projectRoot keepHome
 
 -- | Cleanup Docker images and containers.
 dockerCleanupCmd :: Docker.CleanupOpts -> GlobalOpts -> IO ()
 dockerCleanupCmd cleanupOpts go@GlobalOpts{..} =
-    loadConfigWithOpts go $ \lc ->
+    withLoadConfig go $ \lc ->
     -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
     withUserFileLock go (view stackRootL lc) $ \_ ->
      runRIO (lcConfig lc) $
@@ -989,7 +1009,7 @@ cfgSetCmd co go@GlobalOpts{..} =
         (cfgCmdSet go co)
 
 imgDockerCmd :: (Bool, [Text]) -> GlobalOpts -> IO ()
-imgDockerCmd (rebuild,images) go@GlobalOpts{..} = loadConfigWithOpts go $ \lc -> do
+imgDockerCmd (rebuild,images) go@GlobalOpts{..} = withLoadConfig go $ \lc -> do
     let mProjectRoot = lcProjectRoot lc
     withBuildConfigExt
         WithDocker
@@ -1019,7 +1039,7 @@ newCmd (newOpts,initOpts) go@GlobalOpts{..} =
 
 -- | List the available templates.
 templatesCmd :: () -> GlobalOpts -> IO ()
-templatesCmd _ go@GlobalOpts{..} = withConfigAndLock go templatesHelp
+templatesCmd () go = withRunnerGlobal go templatesHelp
 
 -- | Fix up extra-deps for a project
 solverCmd :: Bool -- ^ modify stack.yaml automatically?

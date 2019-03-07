@@ -7,20 +7,19 @@
 -- | Utilities for running stack commands.
 module Stack.Runners
     ( withGlobalConfigAndLock
-    , withConfigAndLock
     , withMiniConfigAndLock
     , withBuildConfigAndLock
     , withDefaultBuildConfigAndLock
-    , withCleanConfig
     , withBuildConfig
     , withDefaultBuildConfig
     , withBuildConfigExt
     , withBuildConfigDot
-    , loadConfigWithOpts
-    , loadCompilerVersion
+    , withLoadConfig
+    , withLoadConfigAndLock
     , withUserFileLock
     , munlockFile
     , withRunnerGlobal
+    , withActualBuildConfigAndLock
     ) where
 
 import           Stack.Prelude
@@ -39,13 +38,6 @@ import           System.Environment (getEnvironment)
 import           System.IO
 import           System.FileLock
 import           Stack.Dot
-
--- FIXME it seems wrong that we call lcLoadBuildConfig multiple times
-loadCompilerVersion :: GlobalOpts
-                    -> LoadConfig
-                    -> IO WantedCompiler
-loadCompilerVersion go lc =
-    view wantedCompilerVersionL <$> lcLoadBuildConfig lc (globalCompiler go)
 
 -- | Enforce mutual exclusion of every action running via this
 -- function, on this path, on this users account.
@@ -87,20 +79,6 @@ withUserFileLock go@GlobalOpts{} dir act = do
                                             act $ Just lk))
         else act Nothing
 
-withConfigAndLock
-    :: GlobalOpts
-    -> RIO Config ()
-    -> IO ()
-withConfigAndLock go@GlobalOpts{..} inner = loadConfigWithOpts go $ \lc -> do
-    withUserFileLock go (view stackRootL lc) $ \lk ->
-        runRIO (lcConfig lc) $
-            Docker.reexecWithOptionalContainer
-                (lcProjectRoot lc)
-                Nothing
-                (runRIO (lcConfig lc) inner)
-                Nothing
-                (Just $ munlockFile lk)
-
 -- | Loads global config, ignoring any configuration which would be
 -- loaded due to $PWD.
 withGlobalConfigAndLock
@@ -108,8 +86,8 @@ withGlobalConfigAndLock
     -> RIO Config ()
     -> IO ()
 withGlobalConfigAndLock go@GlobalOpts{..} inner =
-    withRunnerGlobal go $ \runner ->
-    runRIO runner $ loadConfigMaybeProject
+    withRunnerGlobal go $
+    loadConfigMaybeProject
       globalConfigMonoid
       Nothing
       LCSNoProject $ \lc ->
@@ -152,30 +130,31 @@ withBuildConfigAndLock
 withBuildConfigAndLock go needTargets boptsCLI inner =
     withBuildConfigExt WithDocker go needTargets boptsCLI Nothing inner Nothing
 
--- | A runner specially built for the "stack clean" use case. For some
--- reason (hysterical raisins?), all of the functions in this module
--- which say BuildConfig actually work on an EnvConfig, while the
--- clean command legitimately only needs a BuildConfig. At some point
--- in the future, we could consider renaming everything for more
--- consistency.
---
--- /NOTE/ This command always runs outside of the Docker environment,
--- since it does not need to run any commands to get information on
--- the project. This is a change as of #4480. For previous behavior,
--- see issue #2010.
-withCleanConfig :: GlobalOpts -> RIO BuildConfig () -> IO ()
-withCleanConfig go inner =
-  loadConfigWithOpts go $ \lc ->
-  withUserFileLock go (view stackRootL lc) $ \_lk0 -> do
-    bconfig <- lcLoadBuildConfig lc $ globalCompiler go
-    runRIO bconfig inner
+withLoadConfigAndLock
+  :: GlobalOpts
+  -> (Maybe FileLock -> RIO LoadConfig a)
+  -> IO a
+withLoadConfigAndLock go inner =
+  withLoadConfig go $ \lc ->
+  withUserFileLock go (view stackRootL lc) $ \lk ->
+  runRIO lc (inner lk)
+
+withActualBuildConfigAndLock
+  :: GlobalOpts
+  -> (Maybe FileLock -> RIO BuildConfig a)
+  -> IO a
+withActualBuildConfigAndLock go inner =
+  withLoadConfigAndLock go $ \lk -> do
+    lc <- ask
+    bconfig <- liftIO $ lcLoadBuildConfig lc $ globalCompiler go
+    runRIO bconfig $ inner lk
 
 withBuildConfigExt
     :: WithDocker
     -> GlobalOpts
     -> NeedTargets
     -> BuildOptsCLI
-    -> Maybe (RIO Config ())
+    -> Maybe (RIO BuildConfig ())
     -- ^ Action to perform before the build.  This will be run on the host
     -- OS even if Docker is enabled for builds.  The build config is not
     -- available in this action, since that would require build tools to be
@@ -183,67 +162,66 @@ withBuildConfigExt
     -> (Maybe FileLock -> RIO EnvConfig ())
     -- ^ Action that uses the build config.  If Docker is enabled for builds,
     -- this will be run in a Docker container.
-    -> Maybe (RIO Config ())
+    -> Maybe (RIO BuildConfig ())
     -- ^ Action to perform after the build.  This will be run on the host
     -- OS even if Docker is enabled for builds.  The build config is not
     -- available in this action, since that would require build tools to be
     -- installed on the host OS.
     -> IO ()
-withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inner mafter = loadConfigWithOpts go $ \lc -> do
-    withUserFileLock go (view stackRootL lc) $ \lk0 -> do
-      -- A local bit of state for communication between callbacks:
-      curLk <- newIORef lk0
-      let inner' lk =
-            -- Locking policy:  This is only used for build commands, which
-            -- only need to lock the snapshot, not the global lock.  We
-            -- trade in the lock here.
-            do dir <- installationRootDeps
-               -- Hand-over-hand locking:
-               withUserFileLock go dir $ \lk2 -> do
-                 liftIO $ writeIORef curLk lk2
-                 liftIO $ munlockFile lk
-                 logDebug "Starting to execute command inside EnvConfig"
-                 inner lk2
+withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inner mafter =
+  withActualBuildConfigAndLock go $ \lk0 -> do
+    -- A local bit of state for communication between callbacks:
+    curLk <- newIORef lk0
+    let inner' lk =
+          -- Locking policy:  This is only used for build commands, which
+          -- only need to lock the snapshot, not the global lock.  We
+          -- trade in the lock here.
+          do dir <- installationRootDeps
+             -- Hand-over-hand locking:
+             withUserFileLock go dir $ \lk2 -> do
+               liftIO $ writeIORef curLk lk2
+               liftIO $ munlockFile lk
+               logDebug "Starting to execute command inside EnvConfig"
+               inner lk2
 
-      let inner'' lk = do
-              bconfig <- lcLoadBuildConfig lc globalCompiler
-              envConfig <- runRIO bconfig (setupEnv needTargets boptsCLI Nothing)
-              runRIO envConfig (inner' lk)
+    bconfig <- ask
+    projectRoot <- view projectRootL
+    let inner'' lk = do
+            envConfig <- runRIO bconfig $ setupEnv needTargets boptsCLI Nothing
+            runRIO envConfig (inner' lk)
 
-      let getCompilerVersion = loadCompilerVersion go lc
-      runRIO (lcConfig lc) $
-        case skipDocker of
-          SkipDocker -> do
-            forM_ mbefore id
-            Nix.reexecWithOptionalShell (lcProjectRoot lc) getCompilerVersion (inner'' lk0)
-            forM_ mafter id
-          WithDocker -> Docker.reexecWithOptionalContainer
-                          (lcProjectRoot lc)
-                          mbefore
-                          (runRIO (lcConfig lc) $
-                              Nix.reexecWithOptionalShell (lcProjectRoot lc) getCompilerVersion (inner'' lk0))
-                          mafter
-                          (Just $ liftIO $
-                                do lk' <- readIORef curLk
-                                   munlockFile lk')
+    compilerVersion <- view wantedCompilerVersionL
+    case skipDocker of
+      SkipDocker -> do
+        sequence_ mbefore
+        Nix.reexecWithOptionalShell projectRoot compilerVersion (inner'' lk0)
+        sequence_ mafter
+      WithDocker -> Docker.reexecWithOptionalContainer
+                      projectRoot
+                      mbefore
+                      (runRIO bconfig
+                        (Nix.reexecWithOptionalShell projectRoot compilerVersion (inner'' lk0)))
+                      mafter
+                      (Just $ liftIO $
+                            do lk' <- readIORef curLk
+                               munlockFile lk')
 
 -- | Load the configuration. Convenience function used
 -- throughout this module.
-loadConfigWithOpts
+withLoadConfig
   :: GlobalOpts
   -> (LoadConfig -> IO a)
   -> IO a
-loadConfigWithOpts go@GlobalOpts{..} inner = withRunnerGlobal go $ \runner -> do
+withLoadConfig go@GlobalOpts{..} inner = withRunnerGlobal go $ do
     mstackYaml <- forM globalStackYaml resolveFile'
-    runRIO runner $
-      loadConfig globalConfigMonoid globalResolver mstackYaml $ \lc -> do
-        -- If we have been relaunched in a Docker container, perform in-container initialization
-        -- (switch UID, etc.).  We do this after first loading the configuration since it must
-        -- happen ASAP but needs a configuration.
-        forM_ globalDockerEntrypoint $ Docker.entrypoint (lcConfig lc)
-        liftIO $ inner lc
+    loadConfig globalConfigMonoid globalResolver mstackYaml $ \lc -> do
+      -- If we have been relaunched in a Docker container, perform in-container initialization
+      -- (switch UID, etc.).  We do this after first loading the configuration since it must
+      -- happen ASAP but needs a configuration.
+      forM_ globalDockerEntrypoint $ Docker.entrypoint (lcConfig lc)
+      liftIO $ inner lc
 
-withRunnerGlobal :: GlobalOpts -> (Runner -> IO a) -> IO a
+withRunnerGlobal :: GlobalOpts -> RIO Runner a -> IO a
 withRunnerGlobal GlobalOpts{..} inner = do
     defColorWhen <- defaultColorWhen
     let globalColorWhen =
@@ -256,15 +234,14 @@ withRunnerGlobal GlobalOpts{..} inner = do
         globalStylesUpdate
         globalTermWidth
         (isJust globalReExecVersion)
-        inner
+        (\runner -> runRIO runner inner)
 
 withMiniConfigAndLock
     :: GlobalOpts
     -> RIO MiniConfig ()
     -> IO ()
 withMiniConfigAndLock go@GlobalOpts{..} inner =
-  withRunnerGlobal go $ \runner ->
-  runRIO runner $
+  withRunnerGlobal go $
   loadConfigMaybeProject globalConfigMonoid globalResolver LCSNoProject $ \lc -> do
     let miniConfig = loadMiniConfig $ lcConfig lc
     runRIO miniConfig inner

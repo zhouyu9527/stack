@@ -91,14 +91,14 @@ import qualified System.Posix.User as PosixUser
 -- nothing but an manager for the call into docker and thus may not hold the lock.
 reexecWithOptionalContainer
     :: HasConfig env
-    => Maybe (Path Abs Dir)
-    -> Maybe (RIO env ())
-    -> IO ()
-    -> Maybe (RIO env ())
-    -> Maybe (RIO env ())
+    => Path Abs Dir -- ^ project root
+    -> Maybe (RIO env ()) -- ^ perform before
+    -> RIO env () -- ^ inner action
+    -> Maybe (RIO env ()) -- ^ perform after
+    -> Maybe (RIO env ()) -- ^ release
     -> RIO env ()
-reexecWithOptionalContainer mprojectRoot =
-    execWithOptionalContainer mprojectRoot getCmdArgs
+reexecWithOptionalContainer projectRoot =
+    execWithOptionalContainer projectRoot getCmdArgs
   where
     getCmdArgs docker imageInfo isRemoteDocker = do
         config <- view configL
@@ -191,32 +191,32 @@ reexecWithOptionalContainer mprojectRoot =
 -- This takes an optional release action just like `reexecWithOptionalContainer`.
 execWithOptionalContainer
     :: HasConfig env
-    => Maybe (Path Abs Dir)
+    => Path Abs Dir -- ^ project root
     -> GetCmdArgs env
-    -> Maybe (RIO env ())
-    -> IO ()
-    -> Maybe (RIO env ())
-    -> Maybe (RIO env ())
+    -> Maybe (RIO env ()) -- ^ before
+    -> RIO env () -- ^ inner
+    -> Maybe (RIO env ()) -- ^ after
+    -> Maybe (RIO env ()) -- ^ release
     -> RIO env ()
-execWithOptionalContainer mprojectRoot getCmdArgs mbefore inner mafter mrelease =
+execWithOptionalContainer projectRoot getCmdArgs mbefore inner mafter mrelease =
   do config <- view configL
      inContainer <- getInContainer
      isReExec <- view reExecL
      if | inContainer && not isReExec && (isJust mbefore || isJust mafter) ->
             throwIO OnlyOnHostException
         | inContainer ->
-            liftIO (do inner
-                       exitSuccess)
+            do inner
+               liftIO exitSuccess
         | not (dockerEnable (configDocker config)) ->
             do fromMaybeAction mbefore
-               liftIO inner
+               inner
                fromMaybeAction mafter
                liftIO exitSuccess
         | otherwise ->
             do fromMaybeAction mrelease
                runContainerAndExit
                  getCmdArgs
-                 mprojectRoot
+                 projectRoot
                  (fromMaybeAction mbefore)
                  (fromMaybeAction mafter)
   where
@@ -235,12 +235,12 @@ preventInContainer inner =
 runContainerAndExit
   :: HasConfig env
   => GetCmdArgs env
-  -> Maybe (Path Abs Dir) -- ^ Project root (maybe)
+  -> Path Abs Dir -- ^ Project root
   -> RIO env ()  -- ^ Action to run before
   -> RIO env ()  -- ^ Action to run after
   -> RIO env ()
 runContainerAndExit getCmdArgs
-                    mprojectRoot
+                    projectRoot
                     before
                     after = do
      config <- view configL
@@ -397,7 +397,6 @@ runContainerAndExit getCmdArgs
         Just ('=':val) -> Just val
         _ -> Nothing
     mountArg (Mount host container) = ["-v",host ++ ":" ++ container]
-    projectRoot = fromMaybeProjectRoot mprojectRoot
     sshRelDir = relDirDotSsh
 
 -- | Clean-up old docker images and containers.
@@ -723,14 +722,13 @@ checkDockerVersion docker =
 
 -- | Remove the project's Docker sandbox.
 reset :: (MonadIO m, MonadReader env m, HasConfig env)
-  => Maybe (Path Abs Dir) -> Bool -> m ()
-reset maybeProjectRoot keepHome = do
+  => Path Abs Dir -> Bool -> m ()
+reset projectRoot keepHome = do
   dockerSandboxDir <- projectDockerSandboxDir projectRoot
   liftIO (removeDirectoryContents
             dockerSandboxDir
             [homeDirName | keepHome]
             [])
-  where projectRoot = fromMaybeProjectRoot maybeProjectRoot
 
 -- | The Docker container "entrypoint": special actions performed when first entering
 -- a container, such as switching the UID/GID to the "outside-Docker" user's.
@@ -851,10 +849,6 @@ hostBinDir = "/opt/host/bin"
 -- | Convenience function to decode ByteString to String.
 decodeUtf8 :: BS.ByteString -> String
 decodeUtf8 bs = T.unpack (T.decodeUtf8 bs)
-
--- | Fail with friendly error if project root not set.
-fromMaybeProjectRoot :: Maybe (Path Abs Dir) -> Path Abs Dir
-fromMaybeProjectRoot = fromMaybe (impureThrow CannotDetermineProjectRootException)
 
 -- | Environment variable that contained the old sandbox ID.
 -- | Use of this variable is deprecated, and only used to detect old images.
