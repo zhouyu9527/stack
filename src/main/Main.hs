@@ -980,33 +980,32 @@ ideTargetsCmd stream go =
 -- | Pull the current Docker image.
 dockerPullCmd :: () -> GlobalOpts -> IO ()
 dockerPullCmd _ go@GlobalOpts{..} =
-    withLoadConfig go $ \lc ->
+  withLoadConfig go $ do
+    root <- view stackRootL
     -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
-    withUserFileLock go (view stackRootL lc) $ \_ ->
-     runRIO lc $
-       Docker.preventInContainer Docker.pull
+    withUserFileLock go root $ \_ -> Docker.preventInContainer Docker.pull
 
 -- | Reset the Docker sandbox.
 dockerResetCmd :: Bool -> GlobalOpts -> IO ()
 dockerResetCmd keepHome go@GlobalOpts{..} =
-    withLoadConfig go $ \lc ->
+  withLoadConfig go $ do
+    stackRoot <- view stackRootL
+    mProjectRoot <- view $ to configProjectRoot
     -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
-    withUserFileLock go (view stackRootL lc) $ \_ ->
-      case configProjectRoot lc of
+    withUserFileLock go stackRoot $ \_ ->
+      case mProjectRoot of
         Nothing -> error "Cannot call docker reset without a project"
         Just projectRoot ->
-          runRIO lc $
           Docker.preventInContainer $ Docker.reset projectRoot keepHome
 
 -- | Cleanup Docker images and containers.
 dockerCleanupCmd :: Docker.CleanupOpts -> GlobalOpts -> IO ()
 dockerCleanupCmd cleanupOpts go@GlobalOpts{..} =
-    withLoadConfig go $ \lc ->
+  withLoadConfig go $ do
+    root <- view stackRootL
     -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
-    withUserFileLock go (view stackRootL lc) $ \_ ->
-     runRIO lc $
-        Docker.preventInContainer $
-            Docker.cleanup cleanupOpts
+    withUserFileLock go root $ \_ ->
+      Docker.preventInContainer $ Docker.cleanup cleanupOpts
 
 cfgSetCmd :: ConfigCmd.ConfigCmdSet -> GlobalOpts -> IO ()
 cfgSetCmd co go@GlobalOpts{..} =
@@ -1015,9 +1014,9 @@ cfgSetCmd co go@GlobalOpts{..} =
         (cfgCmdSet go co)
 
 imgDockerCmd :: (Bool, [Text]) -> GlobalOpts -> IO ()
-imgDockerCmd (rebuild,images) go@GlobalOpts{..} = withLoadConfig go $ \lc -> do
-    let mProjectRoot = configProjectRoot lc
-    withBuildConfigExt
+imgDockerCmd (rebuild,images) go@GlobalOpts{..} = withLoadConfig go $ do
+    mProjectRoot <- view $ to configProjectRoot
+    liftIO $ withBuildConfigExt -- FIXME this repeats the withLoadConfig call
         WithDocker
         go
         NeedTargets

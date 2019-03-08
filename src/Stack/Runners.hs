@@ -39,7 +39,6 @@ import           Stack.Setup
 import           Stack.Types.Config
 import           Stack.Types.Runner
 import           System.Environment (getEnvironment)
-import           System.IO
 import           System.FileLock
 import           Stack.Dot
 
@@ -50,13 +49,13 @@ import           Stack.Dot
 -- stack uses locks per-snapshot.  In the future, stack may refine
 -- this to an even more fine-grain locking approach.
 --
-withUserFileLock :: MonadUnliftIO m
+withUserFileLock :: HasLogFunc env
                  => GlobalOpts
                  -> Path Abs Dir
-                 -> (Maybe FileLock -> m a)
-                 -> m a
-withUserFileLock go@GlobalOpts{} dir act = do
-    env <- liftIO getEnvironment
+                 -> (Maybe FileLock -> RIO env a)
+                 -> RIO env a
+withUserFileLock GlobalOpts{} dir act = withRunInIO $ \run -> do
+    env <- getEnvironment
     let toLock = lookup "STACK_LOCK" env == Just "true"
     if toLock
         then do
@@ -65,31 +64,33 @@ withUserFileLock go@GlobalOpts{} dir act = do
             ensureDir dir
             -- Just in case of asynchronous exceptions, we need to be careful
             -- when using tryLockFile here:
-            bracket (liftIO $ tryLockFile (toFilePath pth) Exclusive)
-                    (maybe (return ()) (liftIO . unlockFile))
-                    (\fstTry ->
-                        case fstTry of
-                          Just lk -> finally (act $ Just lk) (liftIO $ unlockFile lk)
-                          Nothing ->
-                            do let chatter = globalLogLevel go /= LevelOther "silent"
-                               when chatter $
-                                 liftIO $ hPutStrLn stderr $ "Failed to grab lock ("++show pth++
-                                                     "); other stack instance running.  Waiting..."
-                               bracket (liftIO $ lockFile (toFilePath pth) Exclusive)
-                                       (liftIO . unlockFile)
-                                       (\lk -> do
-                                            when chatter $
-                                              liftIO $ hPutStrLn stderr "Lock acquired, proceeding."
-                                            act $ Just lk))
-        else act Nothing
+            bracket
+              (tryLockFile (toFilePath pth) Exclusive)
+              munlockFile
+              (\fstTry ->
+                  case fstTry of
+                    Just lk -> finally (run $ act $ Just lk) (unlockFile lk)
+                    Nothing -> do
+                      run $ logWarn $
+                        "Failed to grab lock (" <> fromString (toFilePath pth) <>
+                        "); other stack instance running.  Waiting..."
+                      bracket
+                        (lockFile (toFilePath pth) Exclusive)
+                        unlockFile
+                        (\lk -> run $ do
+                            logInfo "Lock acquired, proceeding."
+                            act $ Just lk))
+        else run $ act Nothing
 
 -- | Unlock a lock file, if the value is Just
 munlockFile :: MonadIO m => Maybe FileLock -> m ()
 munlockFile Nothing = return ()
 munlockFile (Just lk) = liftIO $ unlockFile lk
 
-withRunnerGlobal :: GlobalOpts -> RIO Runner a -> IO a
-withRunnerGlobal GlobalOpts{..} inner = do
+-- | Run the given action with a 'Runner' created from the given
+-- 'GlobalOpts'
+withRunnerGlobal :: MonadIO m => GlobalOpts -> RIO Runner a -> m a
+withRunnerGlobal GlobalOpts{..} inner = liftIO $ do
     defColorWhen <- defaultColorWhen
     let globalColorWhen =
             fromFirst defColorWhen (configMonoidColorWhen globalConfigMonoid)
@@ -106,9 +107,10 @@ withRunnerGlobal GlobalOpts{..} inner = do
 -- | Loads global config, ignoring any configuration which would be
 -- loaded due to $PWD.
 withGlobalConfigAndLock
-    :: GlobalOpts
-    -> RIO Config ()
-    -> IO ()
+    :: MonadIO m
+    => GlobalOpts
+    -> RIO Config a
+    -> m a
 withGlobalConfigAndLock go@GlobalOpts{..} inner =
     withRunnerGlobal go $
     loadConfig
@@ -116,15 +118,15 @@ withGlobalConfigAndLock go@GlobalOpts{..} inner =
       globalResolver
       globalCompiler
       SYLGlobal $ \lc ->
-        withUserFileLock go (view stackRootL lc) $ \_lk ->
-          runRIO lc inner
+        runRIO lc $ withUserFileLock go (view stackRootL lc) $ \_lk -> inner
 
 -- | Load the configuration. Convenience function used
 -- throughout this module.
 withLoadConfig
-  :: GlobalOpts
-  -> (Config -> IO a)
-  -> IO a
+  :: MonadIO m
+  => GlobalOpts
+  -> RIO Config a
+  -> m a
 withLoadConfig go@GlobalOpts{..} inner = withRunnerGlobal go $ do
     mstackYaml <- forM globalStackYaml resolveFile'
     loadConfig globalConfigMonoid globalResolver globalCompiler mstackYaml $ \lc -> do
@@ -132,16 +134,17 @@ withLoadConfig go@GlobalOpts{..} inner = withRunnerGlobal go $ do
       -- (switch UID, etc.).  We do this after first loading the configuration since it must
       -- happen ASAP but needs a configuration.
       forM_ globalDockerEntrypoint $ Docker.entrypoint lc
-      liftIO $ inner lc
+      runRIO lc inner
 
 withLoadConfigAndLock
-  :: GlobalOpts
+  :: MonadIO m
+  => GlobalOpts
   -> (Maybe FileLock -> RIO Config a)
-  -> IO a
+  -> m a
 withLoadConfigAndLock go inner =
-  withLoadConfig go $ \lc ->
-  withUserFileLock go (view stackRootL lc) $ \lk ->
-  runRIO lc (inner lk)
+  withLoadConfig go $ do
+    root <- view stackRootL
+    withUserFileLock go root inner
 
 withActualBuildConfigAndLock
   :: GlobalOpts
