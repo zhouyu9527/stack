@@ -970,12 +970,12 @@ ghciCmd ghciOpts go@GlobalOpts{..} =
 -- | List packages in the project.
 idePackagesCmd :: (IDE.OutputStream, IDE.ListPackagesCmd) -> GlobalOpts -> IO ()
 idePackagesCmd (stream, cmd) go =
-    withDefaultBuildConfig go (IDE.listPackages stream cmd) -- TODO don't need EnvConfig any more
+    withActualBuildConfig go (IDE.listPackages stream cmd)
 
 -- | List targets in the project.
 ideTargetsCmd :: IDE.OutputStream -> GlobalOpts -> IO ()
 ideTargetsCmd stream go =
-    withDefaultBuildConfig go (IDE.listTargets stream) -- TODO don't need EnvConfig any more
+    withActualBuildConfig go (IDE.listTargets stream)
 
 -- | Pull the current Docker image.
 dockerPullCmd :: () -> GlobalOpts -> IO ()

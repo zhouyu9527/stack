@@ -16,6 +16,7 @@ module Stack.Runners
     , withLoadConfig
     , withLoadConfigAndLock
       -- * BuildConfig
+    , withActualBuildConfig
     , withActualBuildConfigAndLock
       -- * EnvConfig
     , withBuildConfig
@@ -145,6 +146,15 @@ withLoadConfigAndLock go inner =
   withLoadConfig go $ do
     root <- view stackRootL
     withUserFileLock go root inner
+
+withActualBuildConfig
+  :: GlobalOpts
+  -> RIO BuildConfig a
+  -> IO a
+withActualBuildConfig go inner =
+  withLoadConfig go $ do
+    bconfig <- loadBuildConfig
+    runRIO bconfig inner
 
 withActualBuildConfigAndLock
   :: GlobalOpts
