@@ -86,11 +86,11 @@ withGlobalConfigAndLock
     -> IO ()
 withGlobalConfigAndLock go@GlobalOpts{..} inner =
     withRunnerGlobal go $
-    loadConfigMaybeProject
+    loadConfig
       globalConfigMonoid
       globalResolver
       globalCompiler
-      PCNoProject $ \lc ->
+      SYLGlobal $ \lc ->
         withUserFileLock go (view stackRootL lc) $ \_lk ->
           runRIO lc inner
 

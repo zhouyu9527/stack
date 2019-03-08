@@ -437,6 +437,8 @@ data GlobalOpts = GlobalOpts
 data StackYamlLoc filepath
     = SYLDefault
     -- ^ Use the standard parent-directory-checking logic
+    | SYLGlobal
+    -- ^ Force usage of the implicit global project, even if there is a stack.yaml
     | SYLOverride !filepath
     -- ^ Use a specific stack.yaml file provided
     | SYLNoConfig ![PackageIdentifierRevision]
@@ -450,8 +452,8 @@ data ProjectConfig a
     -- ^ Normal run: we want a project, and have one. This comes from
     -- either 'SYLDefault' or 'SYLOverride'.
     | PCNoProject
-    -- ^ No project was found when using 'SYLDefault'. Instead, use
-    -- the implicit global.
+    -- ^ No project was found when using 'SYLDefault' or we're using
+    -- 'SYLGlobal'. Instead, use the implicit global.
     | PCNoConfig ![PackageIdentifierRevision]
     -- ^ Use a no config run, which explicitly ignores any local
     -- configuration values. This comes from 'SYLNoConfig'.

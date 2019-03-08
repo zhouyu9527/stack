@@ -72,6 +72,7 @@ scriptCmd opts go' = do
           fromString fp
         SYLDefault -> return ()
         SYLNoConfig _ -> assert False (return ())
+        SYLGlobal -> assert False (return ())
 
       config <- view configL
       menv <- liftIO $ configProcessContextSettings config defaultEnvSettings

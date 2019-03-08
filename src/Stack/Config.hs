@@ -22,7 +22,6 @@
 -- a warning that "you should run `stk init` to make things better".
 module Stack.Config
   (loadConfig
-  ,loadConfigMaybeProject
   ,loadConfigYaml
   ,packagesParser
   ,getImplicitGlobalProjectDir
@@ -396,22 +395,23 @@ getDefaultLocalProgramsBase configStackRoot configPlatform override =
           Nothing -> return defaultBase
       _ -> return defaultBase
 
--- Load the configuration, using environment variables, and defaults as
--- necessary.
-loadConfigMaybeProject
-    :: HasRunner env
-    => ConfigMonoid
-    -- ^ Config monoid from parsed command-line arguments
-    -> Maybe AbstractResolver
-    -- ^ Override resolver
-    -> Maybe WantedCompiler
-    -- ^ Override compiler
-    -> ProjectConfig (Project, Path Abs File, ConfigMonoid)
-    -- ^ Project config to use, if any
-    -> (Config -> RIO env a)
-    -> RIO env a
-loadConfigMaybeProject configArgs mresolver mcompiler mproject inner = do
+-- | Load the configuration, using current directory, environment variables,
+-- and defaults as necessary.
+loadConfig :: HasRunner env
+           => ConfigMonoid
+           -- ^ Config monoid from parsed command-line arguments
+           -> Maybe AbstractResolver
+           -- ^ Override resolver
+           -> Maybe WantedCompiler
+           -- ^ Override compiler
+           -> StackYamlLoc (Path Abs File)
+           -- ^ Where the project configuration comes from
+           -> (Config -> RIO env a)
+           -> RIO env a
+loadConfig configArgs mresolver mcompiler mstackYaml inner = do
     (stackRoot, userOwnsStackRoot) <- determineStackRootAndOwnership configArgs
+
+    mproject <- loadProjectConfig mstackYaml
 
     let (mproject', addConfigMonoid) =
           case mproject of
@@ -453,23 +453,6 @@ loadConfigMaybeProject configArgs mresolver mcompiler mproject inner = do
           forM_ (configProjectRoot config) $ \dir ->
               checkOwnership (dir </> configWorkDir config)
       inner config
-
--- | Load the configuration, using current directory, environment variables,
--- and defaults as necessary. The passed @Maybe (Path Abs File)@ is an
--- override for the location of the project's stack.yaml.
-loadConfig :: HasRunner env
-           => ConfigMonoid
-           -- ^ Config monoid from parsed command-line arguments
-           -> Maybe AbstractResolver
-           -- ^ Override resolver
-           -> Maybe WantedCompiler
-           -- ^ Override compiler
-           -> StackYamlLoc (Path Abs File)
-           -- ^ Override stack.yaml
-           -> (Config -> RIO env a)
-           -> RIO env a
-loadConfig configArgs mresolver mcompiler mstackYaml inner =
-    loadProjectConfig mstackYaml >>= \x -> loadConfigMaybeProject configArgs mresolver mcompiler x inner
 
 -- | Load the build configuration, adds build-specific values to config loaded by @loadConfig@.
 -- values.
@@ -798,6 +781,7 @@ getProjectConfig SYLDefault = do
         if exists
             then return $ Just fp
             else return Nothing
+getProjectConfig SYLGlobal = return PCNoProject
 getProjectConfig (SYLNoConfig extraDeps) = return $ PCNoConfig extraDeps
 
 -- | Find the project config file location, respecting environment variables
