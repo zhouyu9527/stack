@@ -95,7 +95,6 @@ import              Stack.Types.Compiler
 import              Stack.Types.CompilerBuild
 import              Stack.Types.Config
 import              Stack.Types.Docker
-import              Stack.Types.Runner
 import              Stack.Types.SourceMap
 import              Stack.Types.Version
 import qualified    System.Directory as D

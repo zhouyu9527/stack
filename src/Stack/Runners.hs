@@ -30,6 +30,7 @@ module Stack.Runners
 import           Stack.Prelude
 import           Path
 import           Path.IO
+import           RIO.Process (mkDefaultProcessContext)
 import           Stack.Build.Target(NeedTargets(..))
 import           Stack.Config
 import           Stack.Constants
@@ -38,9 +39,10 @@ import qualified Stack.Docker as Docker
 import qualified Stack.Nix as Nix
 import           Stack.Setup
 import           Stack.Types.Config
-import           Stack.Types.Runner
+import           System.Console.ANSI (hSupportsANSIWithoutEmulation)
 import           System.Environment (getEnvironment)
 import           System.FileLock
+import           System.Terminal (getTerminalWidth)
 import           Stack.Dot
 
 -- | Enforce mutual exclusion of every action running via this
@@ -91,19 +93,39 @@ munlockFile (Just lk) = liftIO $ unlockFile lk
 -- | Run the given action with a 'Runner' created from the given
 -- 'GlobalOpts'
 withRunnerGlobal :: MonadIO m => GlobalOpts -> RIO Runner a -> m a
-withRunnerGlobal GlobalOpts{..} inner = liftIO $ do
-    defColorWhen <- defaultColorWhen
-    let globalColorWhen =
-            fromFirst defColorWhen (configMonoidColorWhen globalConfigMonoid)
-    withRunner
-        globalLogLevel
-        globalTimeInLog
-        globalTerminal
-        globalColorWhen
-        globalStylesUpdate
-        globalTermWidth
-        (isJust globalReExecVersion)
-        (\runner -> runRIO runner inner)
+withRunnerGlobal go inner = liftIO $ do
+  colorWhen <-
+    case getFirst $ configMonoidColorWhen $ globalConfigMonoid go of
+      Nothing -> defaultColorWhen
+      Just colorWhen -> pure colorWhen
+  useColor <- case colorWhen of
+    ColorNever -> return False
+    ColorAlways -> return True
+    ColorAuto -> fromMaybe True <$>
+                          hSupportsANSIWithoutEmulation stderr
+  termWidth <- clipWidth <$> maybe (fromMaybe defaultTerminalWidth
+                                    <$> getTerminalWidth)
+                                   pure (globalTermWidth go)
+  menv <- mkDefaultProcessContext
+  logOptions0 <- logOptionsHandle stderr False
+  let logOptions
+        = setLogUseColor useColor
+        $ setLogUseTime (globalTimeInLog go)
+        $ setLogMinLevel (globalLogLevel go)
+        $ setLogVerboseFormat (globalLogLevel go <= LevelDebug)
+        $ setLogTerminal (globalTerminal go)
+          logOptions0
+  withLogFunc logOptions $ \logFunc -> runRIO Runner
+    { runnerGlobalOpts = go
+    , runnerUseColor = useColor
+    , runnerLogFunc = logFunc
+    , runnerTermWidth = termWidth
+    , runnerProcessContext = menv
+    } inner
+  where clipWidth w
+          | w < minTerminalWidth = minTerminalWidth
+          | w > maxTerminalWidth = maxTerminalWidth
+          | otherwise = w
 
 -- | Loads global config, ignoring any configuration which would be
 -- loaded due to $PWD.
@@ -231,8 +253,8 @@ withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inn
           do dir <- installationRootDeps
              -- Hand-over-hand locking:
              withUserFileLock go dir $ \lk2 -> do
-               liftIO $ writeIORef curLk lk2
-               liftIO $ munlockFile lk
+               writeIORef curLk lk2
+               munlockFile lk
                logDebug "Starting to execute command inside EnvConfig"
                inner lk2
 
@@ -254,7 +276,7 @@ withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inn
                       (runRIO bconfig
                         (Nix.reexecWithOptionalShell projectRoot compilerVersion (inner'' lk0)))
                       mafter
-                      (Just $ liftIO $
+                      (Just $
                             do lk' <- readIORef curLk
                                munlockFile lk')
 
