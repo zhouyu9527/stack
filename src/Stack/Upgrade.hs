@@ -235,8 +235,9 @@ sourceUpgrade gConfigMonoid builtHash (SourceOpts gitRepo) =
       loadConfig
       gConfigMonoid
       Nothing -- always use the resolver settings in the stack.yaml file
+      Nothing -- and don't override the compiler
       (SYLOverride $ dir </> stackDotYaml) $ \lc -> do
-        bconfig <- runRIO lc $ loadBuildConfig Nothing
+        bconfig <- runRIO lc loadBuildConfig
         let boptsCLI = defaultBuildOptsCLI
                 { boptsCLITargets = ["stack"]
                 }

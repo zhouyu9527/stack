@@ -328,6 +328,8 @@ data Config =
          ,configStackRoot           :: !(Path Abs Dir)
          ,configResolver            :: !(Maybe AbstractResolver)
          -- ^ Any resolver override from the command line
+         ,configCompiler            :: !(Maybe WantedCompiler)
+         -- ^ Any compiler override from the command line
          }
 
 -- | The project root directory, if in a project.

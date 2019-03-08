@@ -184,18 +184,20 @@ configNoLocalConfig
     :: HasRunner env
     => Path Abs Dir -- ^ stack root
     -> Maybe AbstractResolver
+    -> Maybe WantedCompiler
     -> ConfigMonoid
     -> [PackageIdentifierRevision]
     -> (Config -> RIO env a)
     -> RIO env a
-configNoLocalConfig _ Nothing _ _ _ = throwIO NoResolverWhenUsingNoLocalConfig
-configNoLocalConfig stackRoot (Just resolver) configMonoid extraDeps inner = do
+configNoLocalConfig _ Nothing _ _ _ _ = throwIO NoResolverWhenUsingNoLocalConfig
+configNoLocalConfig stackRoot (Just resolver) mcompiler configMonoid extraDeps inner = do
     userConfigPath <- liftIO $ getFakeConfigPath stackRoot resolver
     configFromConfigMonoid
       stackRoot
       userConfigPath
       False
       (Just resolver)
+      mcompiler
       (PCNoConfig extraDeps)
       configMonoid
       inner
@@ -207,13 +209,14 @@ configFromConfigMonoid
     -> Path Abs File -- ^ user config file path, e.g. ~/.stack/config.yaml
     -> Bool -- ^ allow locals?
     -> Maybe AbstractResolver
+    -> Maybe WantedCompiler
     -> ProjectConfig (Project, Path Abs File)
     -> ConfigMonoid
     -> (Config -> RIO env a)
     -> RIO env a
 configFromConfigMonoid
     configStackRoot configUserConfigPath configAllowLocals configResolver
-    configProject ConfigMonoid{..} inner = do
+    configCompiler configProject ConfigMonoid{..} inner = do
      -- If --stack-work is passed, prefer it. Otherwise, if STACK_WORK
      -- is set, use that. If neither, use the default ".stack-work"
      mstackWorkEnv <- liftIO $ lookupEnv stackWorkEnvVar
@@ -401,11 +404,13 @@ loadConfigMaybeProject
     -- ^ Config monoid from parsed command-line arguments
     -> Maybe AbstractResolver
     -- ^ Override resolver
+    -> Maybe WantedCompiler
+    -- ^ Override compiler
     -> ProjectConfig (Project, Path Abs File, ConfigMonoid)
     -- ^ Project config to use, if any
     -> (Config -> RIO env a)
     -> RIO env a
-loadConfigMaybeProject configArgs mresolver mproject inner = do
+loadConfigMaybeProject configArgs mresolver mcompiler mproject inner = do
     (stackRoot, userOwnsStackRoot) <- determineStackRootAndOwnership configArgs
 
     let (mproject', addConfigMonoid) =
@@ -429,12 +434,13 @@ loadConfigMaybeProject configArgs mresolver mproject inner = do
             userConfigPath
             True -- allow locals
             mresolver
+            mcompiler
             mproject'
             (mconcat $ configArgs : addConfigMonoid extraConfigs)
             inner2
 
     let withConfig = case mproject of
-          PCNoConfig extraDeps -> configNoLocalConfig stackRoot mresolver configArgs extraDeps
+          PCNoConfig extraDeps -> configNoLocalConfig stackRoot mresolver mcompiler configArgs extraDeps
           PCProject _project -> loadHelper
           PCNoProject -> loadHelper
 
@@ -456,24 +462,25 @@ loadConfig :: HasRunner env
            -- ^ Config monoid from parsed command-line arguments
            -> Maybe AbstractResolver
            -- ^ Override resolver
+           -> Maybe WantedCompiler
+           -- ^ Override compiler
            -> StackYamlLoc (Path Abs File)
            -- ^ Override stack.yaml
            -> (Config -> RIO env a)
            -> RIO env a
-loadConfig configArgs mresolver mstackYaml inner =
-    loadProjectConfig mstackYaml >>= \x -> loadConfigMaybeProject configArgs mresolver x inner
+loadConfig configArgs mresolver mcompiler mstackYaml inner =
+    loadProjectConfig mstackYaml >>= \x -> loadConfigMaybeProject configArgs mresolver mcompiler x inner
 
 -- | Load the build configuration, adds build-specific values to config loaded by @loadConfig@.
 -- values.
-loadBuildConfig :: Maybe WantedCompiler -- override compiler
-                -> RIO Config BuildConfig
-loadBuildConfig mcompiler = do
+loadBuildConfig :: RIO Config BuildConfig
+loadBuildConfig = do
     config <- ask
 
     -- If provided, turn the AbstractResolver from the command line
     -- into a Resolver that can be used below.
 
-    -- The configResolver and mcompiler are provided on the command
+    -- The configResolver and configCompiler are provided on the command
     -- line. In order to properly deal with an AbstractResolver, we
     -- need a base directory (to deal with custom snapshot relative
     -- paths). We consider the current working directory to be the
@@ -532,7 +539,7 @@ loadBuildConfig mcompiler = do
                            , "outside of a real project.\n" ]
                    return (p, dest)
     let project = project'
-            { projectCompiler = mcompiler <|> projectCompiler project'
+            { projectCompiler = configCompiler config <|> projectCompiler project'
             , projectResolver = fromMaybe (projectResolver project') mresolver
             }
 

@@ -1413,9 +1413,10 @@ loadGhcjsEnvConfig stackYaml binPath inner = do
         { configMonoidInstallGHC = First (Just True)
         , configMonoidLocalBinPath = First (Just (toFilePath binPath))
         })
-      Nothing
+      Nothing -- resolver
+      Nothing -- compiler
       (SYLOverride stackYaml) $ \lc -> do
-        bconfig <- runRIO lc $ loadBuildConfig Nothing
+        bconfig <- runRIO lc loadBuildConfig
         envConfig <- runRIO bconfig $ setupEnv AllowNoTargets defaultBuildOptsCLI Nothing
         inner envConfig
 

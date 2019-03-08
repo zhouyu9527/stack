@@ -89,6 +89,7 @@ withGlobalConfigAndLock go@GlobalOpts{..} inner =
     loadConfigMaybeProject
       globalConfigMonoid
       globalResolver
+      globalCompiler
       PCNoProject $ \lc ->
         withUserFileLock go (view stackRootL lc) $ \_lk ->
           runRIO lc inner
@@ -144,7 +145,7 @@ withActualBuildConfigAndLock
   -> IO a
 withActualBuildConfigAndLock go inner =
   withLoadConfigAndLock go $ \lk -> do
-    bconfig <- loadBuildConfig $ globalCompiler go
+    bconfig <- loadBuildConfig
     runRIO bconfig $ inner lk
 
 withBuildConfigExt
@@ -212,7 +213,7 @@ withLoadConfig
   -> IO a
 withLoadConfig go@GlobalOpts{..} inner = withRunnerGlobal go $ do
     mstackYaml <- forM globalStackYaml resolveFile'
-    loadConfig globalConfigMonoid globalResolver mstackYaml $ \lc -> do
+    loadConfig globalConfigMonoid globalResolver globalCompiler mstackYaml $ \lc -> do
       -- If we have been relaunched in a Docker container, perform in-container initialization
       -- (switch UID, etc.).  We do this after first loading the configuration since it must
       -- happen ASAP but needs a configuration.

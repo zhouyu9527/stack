@@ -55,7 +55,7 @@ buildConfigCompleter inner = mkCompleter $ \inputRaw -> do
             go' <- globalOptsFromMonoid False mempty
             let go = go' { globalLogLevel = LevelOther "silent" }
             withLoadConfig go $ \lc -> do -- FIXME looks like something we can add to Runners
-              bconfig <- runRIO lc $ loadBuildConfig (globalCompiler go)
+              bconfig <- runRIO lc loadBuildConfig
               envConfig <- runRIO bconfig (setupEnv AllowNoTargets defaultBuildOptsCLI Nothing)
               runRIO envConfig (inner input)
 
