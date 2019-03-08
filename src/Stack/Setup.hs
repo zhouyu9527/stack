@@ -1414,7 +1414,7 @@ loadGhcjsEnvConfig stackYaml binPath inner = do
               { configMonoidInstallGHC = First (Just True)
               , configMonoidLocalBinPath = First (Just (toFilePath binPath))
               }
-          , globalStackYaml = SYLOverride $ toFilePath stackYaml
+          , globalStackYaml = SYLOverride stackYaml
           }
     -- We're intentionally throwing away a previous BuildConfig to set
     -- up a fresh one for building GHCJS itself

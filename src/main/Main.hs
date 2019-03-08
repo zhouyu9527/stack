@@ -1000,9 +1000,7 @@ dockerCleanupCmd cleanupOpts =
   Docker.preventInContainer $ Docker.cleanup cleanupOpts
 
 cfgSetCmd :: ConfigCmd.ConfigCmdSet -> RIO Runner ()
-cfgSetCmd co = do
-  go <- view globalOptsL
-  withGlobalConfigAndLock (cfgCmdSet go co)
+cfgSetCmd = withGlobalConfigAndLock . cfgCmdSet
 
 imgDockerCmd :: (Bool, [Text]) -> RIO Runner ()
 imgDockerCmd (rebuild,images) = withLoadConfig $ withActualBuildConfig $ do

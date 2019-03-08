@@ -233,7 +233,7 @@ sourceUpgrade gConfigMonoid builtHash (SourceOpts gitRepo) =
           { globalConfigMonoid = gConfigMonoid
           , globalResolver = Nothing -- always use the resolver settings in the stack.yaml file
           , globalCompiler = Nothing -- and don't override the compiler
-          , globalStackYaml = SYLOverride $ toFilePath $ dir </> stackDotYaml
+          , globalStackYaml = SYLOverride $ dir </> stackDotYaml
           }
     forM_ mdir $ \dir -> local (over globalOptsL (modifyGO dir)) $
       withActualBuildConfig $ do

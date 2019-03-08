@@ -70,7 +70,7 @@ scriptCmd opts = do
       case stackYaml of
         SYLOverride fp -> logError $
           "Ignoring override stack.yaml file for script command: " <>
-          fromString fp
+          fromString (toFilePath fp)
         SYLDefault -> return ()
         SYLNoConfig _ -> assert False (return ())
         SYLGlobal -> assert False (return ())

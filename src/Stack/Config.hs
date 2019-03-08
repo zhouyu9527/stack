@@ -409,7 +409,6 @@ loadConfig inner = do
 
     mproject <-
       view (globalOptsL.to globalStackYaml) >>=
-      traverse resolveFile' >>=
       loadProjectConfig
 
     let (mproject', addConfigMonoid) =
