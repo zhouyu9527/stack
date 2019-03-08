@@ -728,9 +728,9 @@ reset projectRoot keepHome = do
 
 -- | The Docker container "entrypoint": special actions performed when first entering
 -- a container, such as switching the UID/GID to the "outside-Docker" user's.
-entrypoint :: (HasProcessContext env, HasLogFunc env)
-           => Config -> DockerEntrypoint -> RIO env ()
-entrypoint config@Config{..} DockerEntrypoint{..} =
+entrypoint :: HasConfig env
+           => DockerEntrypoint -> RIO env ()
+entrypoint DockerEntrypoint{..} =
   modifyMVar_ entrypointMVar $ \alreadyRan -> do
     -- Only run the entrypoint once
     unless alreadyRan $ do
@@ -755,7 +755,8 @@ entrypoint config@Config{..} DockerEntrypoint{..} =
           when buildPlanDirExists $ do
             (_, buildPlans) <- listDir (buildPlanDir origStackRoot)
             forM_ buildPlans $ \srcBuildPlan -> do
-              let destBuildPlan = buildPlanDir (view stackRootL config) </> filename srcBuildPlan
+              root <- view stackRootL
+              let destBuildPlan = buildPlanDir root </> filename srcBuildPlan
               exists <- doesFileExist destBuildPlan
               unless exists $ do
                 ensureDir (parent destBuildPlan)

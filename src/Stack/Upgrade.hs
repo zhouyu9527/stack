@@ -18,8 +18,8 @@ import           Path
 import qualified Paths_stack as Paths
 import           Stack.Build
 import           Stack.Build.Target (NeedTargets(..))
-import           Stack.Config
 import           Stack.Constants
+import           Stack.Runners
 import           Stack.Setup
 import           Stack.Types.Config
 import           System.Console.ANSI (hSupportsANSIWithoutEmulation)
@@ -90,11 +90,10 @@ data UpgradeOpts = UpgradeOpts
     }
     deriving Show
 
-upgrade :: HasConfig env
-        => ConfigMonoid
+upgrade :: ConfigMonoid
         -> Maybe String -- ^ git hash at time of building, if known
         -> UpgradeOpts
-        -> RIO env ()
+        -> RIO Config ()
 upgrade gConfigMonoid builtHash (UpgradeOpts mbo mso) =
     case (mbo, mso) of
         -- FIXME It would be far nicer to capture this case in the
@@ -117,7 +116,7 @@ upgrade gConfigMonoid builtHash (UpgradeOpts mbo mso) =
     binary bo = binaryUpgrade bo
     source so = sourceUpgrade gConfigMonoid builtHash so
 
-binaryUpgrade :: HasConfig env => BinaryOpts -> RIO env ()
+binaryUpgrade :: BinaryOpts -> RIO Config ()
 binaryUpgrade (BinaryOpts mplatform force' mver morg mrepo) = do
     platforms0 <-
       case mplatform of
@@ -168,11 +167,10 @@ binaryUpgrade (BinaryOpts mplatform force' mver morg mrepo) = do
                     $ throwString "Non-success exit code from running newly downloaded executable"
 
 sourceUpgrade
-  :: HasConfig env
-  => ConfigMonoid
+  :: ConfigMonoid
   -> Maybe String
   -> SourceOpts
-  -> RIO env ()
+  -> RIO Config ()
 sourceUpgrade gConfigMonoid builtHash (SourceOpts gitRepo) =
   withSystemTempDir "stack-upgrade" $ \tmp -> do
     mdir <- case gitRepo of
@@ -231,20 +229,20 @@ sourceUpgrade gConfigMonoid builtHash (SourceOpts gitRepo) =
                     unpackPackageLocation dir $ PLIHackage ident cfKey treeKey
                     pure $ Just dir
 
-    let modifyGO go = go
+    let modifyGO dir go = go
           { globalConfigMonoid = gConfigMonoid
           , globalResolver = Nothing -- always use the resolver settings in the stack.yaml file
           , globalCompiler = Nothing -- and don't override the compiler
+          , globalStackYaml = SYLOverride $ toFilePath $ dir </> stackDotYaml
           }
-    forM_ mdir $ \dir -> local (over globalOptsL modifyGO) $
-      loadConfig
-      (SYLOverride $ dir </> stackDotYaml) $ \lc -> do
-        bconfig <- runRIO lc loadBuildConfig
+    forM_ mdir $ \dir -> local (over globalOptsL (modifyGO dir)) $
+      withActualBuildConfig $ do
         let boptsCLI = defaultBuildOptsCLI
                 { boptsCLITargets = ["stack"]
                 }
-        envConfig1 <- runRIO bconfig $ setupEnv AllowNoTargets boptsCLI $ Just $
+        localPrograms <- view $ configL.to configLocalPrograms
+        envConfig1 <- setupEnv AllowNoTargets boptsCLI $ Just $
             "Try rerunning with --install-ghc to install the correct GHC into " <>
-            T.pack (toFilePath (configLocalPrograms (view configL bconfig)))
+            T.pack (toFilePath localPrograms)
         runRIO (set (buildOptsL.buildOptsInstallExesL) True envConfig1) $
             build Nothing Nothing

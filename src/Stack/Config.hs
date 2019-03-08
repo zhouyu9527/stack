@@ -397,19 +397,20 @@ getDefaultLocalProgramsBase configStackRoot configPlatform override =
 
 -- | Load the configuration, using current directory, environment variables,
 -- and defaults as necessary.
-loadConfig :: HasRunner env
-           => StackYamlLoc (Path Abs File) -- FIXME get rid of this
-           -- ^ Where the project configuration comes from
-           -> (Config -> RIO env a)
-           -> RIO env a
-loadConfig mstackYaml inner = do
+loadConfig
+  :: RIO Config a
+  -> RIO Runner a -- concrete to avoid reloading the config
+loadConfig inner = do
     go <- view globalOptsL
     let configArgs = globalConfigMonoid go
         mresolver = globalResolver go
         mcompiler = globalCompiler go
     (stackRoot, userOwnsStackRoot) <- determineStackRootAndOwnership configArgs
 
-    mproject <- loadProjectConfig mstackYaml
+    mproject <-
+      view (globalOptsL.to globalStackYaml) >>=
+      traverse resolveFile' >>=
+      loadProjectConfig
 
     let (mproject', addConfigMonoid) =
           case mproject of
@@ -450,7 +451,7 @@ loadConfig mstackYaml inner = do
               throwM (UserDoesn'tOwnDirectory stackRoot)
           forM_ (configProjectRoot config) $ \dir ->
               checkOwnership (dir </> configWorkDir config)
-      inner config
+      runRIO config inner
 
 -- | Load the build configuration, adds build-specific values to config loaded by @loadConfig@.
 -- values.

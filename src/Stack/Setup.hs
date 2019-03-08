@@ -1404,7 +1404,7 @@ loadGhcjsEnvConfig
   :: HasRunner env
   => Path Abs File
   -> Path b t
-  -> (EnvConfig -> RIO env a)
+  -> (EnvConfig -> RIO BuildConfig a)
   -> RIO env a
 loadGhcjsEnvConfig stackYaml binPath inner = do
     let modifyGO go = go
@@ -1414,12 +1414,16 @@ loadGhcjsEnvConfig stackYaml binPath inner = do
               { configMonoidInstallGHC = First (Just True)
               , configMonoidLocalBinPath = First (Just (toFilePath binPath))
               }
+          , globalStackYaml = SYLOverride $ toFilePath stackYaml
           }
-    local (over globalOptsL modifyGO) $ loadConfig
-      (SYLOverride stackYaml) $ \lc -> do
-        bconfig <- runRIO lc loadBuildConfig
-        envConfig <- runRIO bconfig $ setupEnv AllowNoTargets defaultBuildOptsCLI Nothing
-        inner envConfig
+    -- We're intentionally throwing away a previous BuildConfig to set
+    -- up a fresh one for building GHCJS itself
+    runner <- view runnerL
+    runRIO (over globalOptsL modifyGO runner) $ loadConfig $ do
+        bconfig <- loadBuildConfig
+        runRIO bconfig $ do
+          envConfig <- setupEnv AllowNoTargets defaultBuildOptsCLI Nothing
+          inner envConfig
 
 buildInGhcjsEnv :: (HasEnvConfig env, MonadIO m) => env -> m ()
 buildInGhcjsEnv envConfig = do
