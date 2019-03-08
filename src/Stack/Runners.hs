@@ -89,9 +89,9 @@ withGlobalConfigAndLock go@GlobalOpts{..} inner =
     loadConfigMaybeProject
       globalConfigMonoid
       globalResolver
-      LCSNoProject $ \lc ->
+      PCNoProject $ \lc ->
         withUserFileLock go (view stackRootL lc) $ \_lk ->
-          runRIO (lcConfig lc) inner
+          runRIO lc inner
 
 -- For now the non-locking version just unlocks immediately.
 -- That is, there's still a serialization point.
@@ -131,7 +131,7 @@ withBuildConfigAndLock go needTargets boptsCLI inner =
 
 withLoadConfigAndLock
   :: GlobalOpts
-  -> (Maybe FileLock -> RIO LoadConfig a)
+  -> (Maybe FileLock -> RIO Config a)
   -> IO a
 withLoadConfigAndLock go inner =
   withLoadConfig go $ \lc ->
@@ -144,8 +144,7 @@ withActualBuildConfigAndLock
   -> IO a
 withActualBuildConfigAndLock go inner =
   withLoadConfigAndLock go $ \lk -> do
-    lc <- ask
-    bconfig <- liftIO $ lcLoadBuildConfig lc $ globalCompiler go
+    bconfig <- loadBuildConfig $ globalCompiler go
     runRIO bconfig $ inner lk
 
 withBuildConfigExt
@@ -209,7 +208,7 @@ withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inn
 -- throughout this module.
 withLoadConfig
   :: GlobalOpts
-  -> (LoadConfig -> IO a)
+  -> (Config -> IO a)
   -> IO a
 withLoadConfig go@GlobalOpts{..} inner = withRunnerGlobal go $ do
     mstackYaml <- forM globalStackYaml resolveFile'
@@ -217,7 +216,7 @@ withLoadConfig go@GlobalOpts{..} inner = withRunnerGlobal go $ do
       -- If we have been relaunched in a Docker container, perform in-container initialization
       -- (switch UID, etc.).  We do this after first loading the configuration since it must
       -- happen ASAP but needs a configuration.
-      forM_ globalDockerEntrypoint $ Docker.entrypoint (lcConfig lc)
+      forM_ globalDockerEntrypoint $ Docker.entrypoint lc
       liftIO $ inner lc
 
 withRunnerGlobal :: GlobalOpts -> RIO Runner a -> IO a

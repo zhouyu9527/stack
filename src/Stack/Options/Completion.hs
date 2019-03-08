@@ -20,6 +20,7 @@ import qualified Distribution.Types.UnqualComponentName as C
 import           Options.Applicative
 import           Options.Applicative.Builder.Extra
 import           Stack.Build.Target (NeedTargets(..))
+import           Stack.Config (loadBuildConfig)
 import           Stack.Constants (ghcShowOptionsOutput)
 import           Stack.Options.GlobalParser (globalOptsFromMonoid)
 import           Stack.Runners (withLoadConfig)
@@ -54,7 +55,7 @@ buildConfigCompleter inner = mkCompleter $ \inputRaw -> do
             go' <- globalOptsFromMonoid False mempty
             let go = go' { globalLogLevel = LevelOther "silent" }
             withLoadConfig go $ \lc -> do -- FIXME looks like something we can add to Runners
-              bconfig <- liftIO $ lcLoadBuildConfig lc (globalCompiler go)
+              bconfig <- runRIO lc $ loadBuildConfig (globalCompiler go)
               envConfig <- runRIO bconfig (setupEnv AllowNoTargets defaultBuildOptsCLI Nothing)
               runRIO envConfig (inner input)
 
@@ -87,8 +88,11 @@ flagCompleter = buildConfigCompleter $ \input -> do
         flagString name fl =
             let flname = C.unFlagName $ C.flagName fl
              in (if flagEnabled name fl then "-" else "") ++ flname
-        prjFlags = maybe mempty (projectFlags . fst) $
-                   configMaybeProject (bcConfig bconfig)
+        prjFlags =
+          case configProject (bcConfig bconfig) of
+            PCProject (p, _) -> projectFlags p
+            PCNoProject -> mempty
+            PCNoConfig _ -> mempty
         flagEnabled name fl =
             fromMaybe (C.flagDefault fl) $
             Map.lookup (C.flagName fl) $

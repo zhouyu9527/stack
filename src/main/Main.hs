@@ -983,7 +983,7 @@ dockerPullCmd _ go@GlobalOpts{..} =
     withLoadConfig go $ \lc ->
     -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
     withUserFileLock go (view stackRootL lc) $ \_ ->
-     runRIO (lcConfig lc) $
+     runRIO lc $
        Docker.preventInContainer Docker.pull
 
 -- | Reset the Docker sandbox.
@@ -992,10 +992,10 @@ dockerResetCmd keepHome go@GlobalOpts{..} =
     withLoadConfig go $ \lc ->
     -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
     withUserFileLock go (view stackRootL lc) $ \_ ->
-      case lcProjectRoot lc of
+      case configProjectRoot lc of
         Nothing -> error "Cannot call docker reset without a project"
         Just projectRoot ->
-          runRIO (lcConfig lc) $
+          runRIO lc $
           Docker.preventInContainer $ Docker.reset projectRoot keepHome
 
 -- | Cleanup Docker images and containers.
@@ -1004,7 +1004,7 @@ dockerCleanupCmd cleanupOpts go@GlobalOpts{..} =
     withLoadConfig go $ \lc ->
     -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
     withUserFileLock go (view stackRootL lc) $ \_ ->
-     runRIO (lcConfig lc) $
+     runRIO lc $
         Docker.preventInContainer $
             Docker.cleanup cleanupOpts
 
@@ -1016,7 +1016,7 @@ cfgSetCmd co go@GlobalOpts{..} =
 
 imgDockerCmd :: (Bool, [Text]) -> GlobalOpts -> IO ()
 imgDockerCmd (rebuild,images) go@GlobalOpts{..} = withLoadConfig go $ \lc -> do
-    let mProjectRoot = lcProjectRoot lc
+    let mProjectRoot = configProjectRoot lc
     withBuildConfigExt
         WithDocker
         go
