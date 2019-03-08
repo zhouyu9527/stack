@@ -231,11 +231,13 @@ sourceUpgrade gConfigMonoid builtHash (SourceOpts gitRepo) =
                     unpackPackageLocation dir $ PLIHackage ident cfKey treeKey
                     pure $ Just dir
 
-    forM_ mdir $ \dir ->
+    let modifyGO go = go
+          { globalConfigMonoid = gConfigMonoid
+          , globalResolver = Nothing -- always use the resolver settings in the stack.yaml file
+          , globalCompiler = Nothing -- and don't override the compiler
+          }
+    forM_ mdir $ \dir -> local (over globalOptsL modifyGO) $
       loadConfig
-      gConfigMonoid
-      Nothing -- always use the resolver settings in the stack.yaml file
-      Nothing -- and don't override the compiler
       (SYLOverride $ dir </> stackDotYaml) $ \lc -> do
         bconfig <- runRIO lc loadBuildConfig
         let boptsCLI = defaultBuildOptsCLI

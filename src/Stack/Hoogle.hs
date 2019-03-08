@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -24,13 +25,14 @@ import           System.Exit
 import           RIO.Process
 
 -- | Hoogle command.
-hoogleCmd :: ([String],Bool,Bool,Bool) -> GlobalOpts -> IO ()
-hoogleCmd (args,setup,rebuild,startServer) go = withDefaultBuildConfig haddocksGo $ do
+hoogleCmd :: ([String],Bool,Bool,Bool) -> RIO Runner ()
+hoogleCmd (args,setup,rebuild,startServer) =
+  local (over globalOptsL modifyGO) $ withLoadConfig $ withActualBuildConfig $ withDefaultBuildConfig $ do
     hooglePath <- ensureHoogleInPath
     generateDbIfNeeded hooglePath
     runHoogle hooglePath args'
   where
-    haddocksGo = go & globalOptsBuildOptsMonoidL . buildOptsMonoidHaddockL ?~ True
+    modifyGO go = go & globalOptsBuildOptsMonoidL . buildOptsMonoidHaddockL ?~ True
     args' :: [String]
     args' = if startServer
                  then ["server", "--local", "--port", "8080"]
@@ -61,9 +63,9 @@ hoogleCmd (args,setup,rebuild,startServer) go = withDefaultBuildConfig haddocksG
            createDirIfMissing True dir
            runHoogle hooglePath ["generate", "--local"]
     buildHaddocks :: RIO EnvConfig ()
-    buildHaddocks =
-        liftIO $
-        catch (withDefaultBuildConfigAndLock haddocksGo $ Stack.Build.build Nothing)
+    buildHaddocks = do
+        bconfig <- view buildConfigL -- FIXME this whole function feels wrong, why restarting EnvConfig?
+        catch (runRIO bconfig $ withDefaultBuildConfigAndLock $ Stack.Build.build Nothing)
               (\(_ :: ExitCode) -> return ())
     hooglePackageName = mkPackageName "hoogle"
     hoogleMinVersion = mkVersion [5, 0]
@@ -105,32 +107,28 @@ hoogleCmd (args,setup,rebuild,startServer) go = withDefaultBuildConfig haddocksG
                     (\(PackageIdentifierRevision n v _) -> PackageIdentifier n v)
                     hooglePackageIdentifier
                 }
-        liftIO
-            (catch
-                 (withBuildConfigAndLock
-                      haddocksGo
-                      NeedTargets
-                      boptsCLI $
-                      Stack.Build.build Nothing
-                 )
-                 (\(e :: ExitCode) ->
-                       case e of
-                           ExitSuccess -> runRIO menv resetExeCache
-                           _ -> throwIO e))
+        bconfig <- view buildConfigL
+        runRIO bconfig $ withBuildConfigAndLock -- FIXME why is this rerun necessary?
+          NeedTargets
+          boptsCLI
+          (Stack.Build.build Nothing)
+          `catch` \case
+                    ExitSuccess -> runRIO menv resetExeCache
+                    e -> throwIO e
     runHoogle :: Path Abs File -> [String] -> RIO EnvConfig ()
     runHoogle hooglePath hoogleArgs = do
         config <- view configL
         menv <- liftIO $ configProcessContextSettings config envSettings
-        dbpath <- hoogleDatabasePath
+        dbpath <- (error "FIXME" :: RIO EnvConfig a -> RIO EnvConfig a) hoogleDatabasePath
         let databaseArg = ["--database=" ++ toFilePath dbpath]
         withProcessContext menv $ proc
           (toFilePath hooglePath)
           (hoogleArgs ++ databaseArg)
           runProcess_
-    bail :: RIO EnvConfig a
-    bail = liftIO (exitWith (ExitFailure (-1)))
+    bail :: MonadIO m => m void
+    bail = liftIO (exitWith (ExitFailure (-1))) -- FIXME shouldn't this just be liftIO exitFailure?
     checkDatabaseExists = do
-        path <- hoogleDatabasePath
+        path <- (error "FIXME" :: RIO EnvConfig a -> RIO EnvConfig a) hoogleDatabasePath
         liftIO (doesFileExist path)
     ensureHoogleInPath :: RIO EnvConfig (Path Abs File)
     ensureHoogleInPath = do

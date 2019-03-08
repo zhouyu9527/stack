@@ -7,10 +7,9 @@
 -- | Utilities for running stack commands.
 module Stack.Runners
     ( -- * File locking
-      withUserFileLock
-    , munlockFile
+      munlockFile
       -- * Runner
-    , withRunnerGlobal
+    , withRunner
       -- * Config
     , withGlobalConfigAndLock
     , withLoadConfig
@@ -53,11 +52,10 @@ import           Stack.Dot
 -- this to an even more fine-grain locking approach.
 --
 withUserFileLock :: HasLogFunc env
-                 => GlobalOpts
-                 -> Path Abs Dir
+                 => Path Abs Dir
                  -> (Maybe FileLock -> RIO env a)
                  -> RIO env a
-withUserFileLock GlobalOpts{} dir act = withRunInIO $ \run -> do
+withUserFileLock dir act = withRunInIO $ \run -> do
     env <- getEnvironment
     let toLock = lookup "STACK_LOCK" env == Just "true"
     if toLock
@@ -90,10 +88,15 @@ munlockFile :: MonadIO m => Maybe FileLock -> m ()
 munlockFile Nothing = return ()
 munlockFile (Just lk) = liftIO $ unlockFile lk
 
+-- NOTE: Functions below are intentionally more monomorphic than they
+-- need to be, i.e. they do not use type classes like HasRunner in the
+-- signatures. This helps ensure that we don't accidentally do
+-- something like `withRunner $ withRunner foo`.
+
 -- | Run the given action with a 'Runner' created from the given
 -- 'GlobalOpts'
-withRunnerGlobal :: MonadIO m => GlobalOpts -> RIO Runner a -> m a
-withRunnerGlobal go inner = liftIO $ do
+withRunner :: GlobalOpts -> RIO Runner a -> IO a
+withRunner go inner = do
   colorWhen <-
     case getFirst $ configMonoidColorWhen $ globalConfigMonoid go of
       Nothing -> defaultColorWhen
@@ -130,102 +133,85 @@ withRunnerGlobal go inner = liftIO $ do
 -- | Loads global config, ignoring any configuration which would be
 -- loaded due to $PWD.
 withGlobalConfigAndLock
-    :: MonadIO m
-    => GlobalOpts
-    -> RIO Config a
-    -> m a
-withGlobalConfigAndLock go@GlobalOpts{..} inner =
-    withRunnerGlobal go $
+    :: HasRunner env
+    => RIO Config a
+    -> RIO env a
+withGlobalConfigAndLock inner = do
+    GlobalOpts {..} <- view globalOptsL
     loadConfig
-      globalConfigMonoid
-      globalResolver
-      globalCompiler
       SYLGlobal $ \lc ->
-        runRIO lc $ withUserFileLock go (view stackRootL lc) $ \_lk -> inner
+        runRIO lc $ withUserFileLock (view stackRootL lc) $ \_lk -> inner
 
 -- | Load the configuration. Convenience function used
 -- throughout this module.
 withLoadConfig
-  :: MonadIO m
-  => GlobalOpts
-  -> RIO Config a
-  -> m a
-withLoadConfig go@GlobalOpts{..} inner = withRunnerGlobal go $ do
-    mstackYaml <- forM globalStackYaml resolveFile'
-    loadConfig globalConfigMonoid globalResolver globalCompiler mstackYaml $ \lc -> do
+  :: RIO Config a
+  -> RIO Runner a
+withLoadConfig inner = do
+    go <- view globalOptsL
+    mstackYaml <- forM (globalStackYaml go) resolveFile'
+    loadConfig mstackYaml $ \lc -> do
       -- If we have been relaunched in a Docker container, perform in-container initialization
       -- (switch UID, etc.).  We do this after first loading the configuration since it must
       -- happen ASAP but needs a configuration.
-      forM_ globalDockerEntrypoint $ Docker.entrypoint lc
+      forM_ (globalDockerEntrypoint go) $ Docker.entrypoint lc
       runRIO lc inner
 
 withLoadConfigAndLock
-  :: MonadIO m
-  => GlobalOpts
-  -> (Maybe FileLock -> RIO Config a)
-  -> m a
-withLoadConfigAndLock go inner =
-  withLoadConfig go $ do
+  :: (Maybe FileLock -> RIO Config a)
+  -> RIO Runner a
+withLoadConfigAndLock inner =
+  withLoadConfig $ do
     root <- view stackRootL
-    withUserFileLock go root inner
+    withUserFileLock root inner
 
-withActualBuildConfig
-  :: GlobalOpts
-  -> RIO BuildConfig a
-  -> IO a
-withActualBuildConfig go inner =
-  withLoadConfig go $ do
-    bconfig <- loadBuildConfig
-    runRIO bconfig inner
+withActualBuildConfig :: RIO BuildConfig a -> RIO Config a
+withActualBuildConfig inner = do
+  bconfig <- loadBuildConfig
+  runRIO bconfig inner
 
 withActualBuildConfigAndLock
-  :: GlobalOpts
-  -> (Maybe FileLock -> RIO BuildConfig a)
-  -> IO a
-withActualBuildConfigAndLock go inner =
-  withLoadConfigAndLock go $ \lk -> do
-    bconfig <- loadBuildConfig
-    runRIO bconfig $ inner lk
+  :: (Maybe FileLock -> RIO BuildConfig a)
+  -> RIO Config a
+withActualBuildConfigAndLock inner = do
+  root <- view stackRootL
+  bconfig <- loadBuildConfig
+  withUserFileLock root $ runRIO bconfig . inner
 
 withBuildConfig
-    :: GlobalOpts
-    -> NeedTargets
+    :: NeedTargets
     -> BuildOptsCLI
-    -> RIO EnvConfig ()
-    -> IO ()
-withBuildConfig go needTargets boptsCLI inner =
-    withBuildConfigAndLock go needTargets boptsCLI (\lk -> do munlockFile lk
-                                                              inner)
+    -> RIO EnvConfig a
+    -> RIO BuildConfig a
+withBuildConfig needTargets boptsCLI inner =
+    withBuildConfigAndLock needTargets boptsCLI (\lk -> do munlockFile lk
+                                                           inner)
 
 withBuildConfigAndLock
-    :: GlobalOpts
-    -> NeedTargets
+    :: NeedTargets
     -> BuildOptsCLI
-    -> (Maybe FileLock -> RIO EnvConfig ())
-    -> IO ()
-withBuildConfigAndLock go needTargets boptsCLI inner =
-    withBuildConfigExt WithDocker go needTargets boptsCLI Nothing inner Nothing
+    -> (Maybe FileLock -> RIO EnvConfig a)
+    -> RIO BuildConfig a
+withBuildConfigAndLock needTargets boptsCLI inner =
+    withBuildConfigExt WithDocker needTargets boptsCLI Nothing inner Nothing
 
 -- For now the non-locking version just unlocks immediately.
 -- That is, there's still a serialization point.
 withDefaultBuildConfig
-    :: GlobalOpts
-    -> RIO EnvConfig ()
-    -> IO ()
-withDefaultBuildConfig go inner =
-    withBuildConfigAndLock go AllowNoTargets defaultBuildOptsCLI (\lk -> do munlockFile lk
-                                                                            inner)
+    :: RIO EnvConfig ()
+    -> RIO BuildConfig ()
+withDefaultBuildConfig inner =
+    withBuildConfigAndLock AllowNoTargets defaultBuildOptsCLI (\lk -> do munlockFile lk
+                                                                         inner)
 
 withDefaultBuildConfigAndLock
-    :: GlobalOpts
-    -> (Maybe FileLock -> RIO EnvConfig ())
-    -> IO ()
-withDefaultBuildConfigAndLock go inner =
-    withBuildConfigExt WithDocker go AllowNoTargets defaultBuildOptsCLI Nothing inner Nothing
+    :: (Maybe FileLock -> RIO EnvConfig ())
+    -> RIO BuildConfig ()
+withDefaultBuildConfigAndLock inner =
+    withBuildConfigExt WithDocker AllowNoTargets defaultBuildOptsCLI Nothing inner Nothing
 
 withBuildConfigExt
     :: WithDocker
-    -> GlobalOpts
     -> NeedTargets
     -> BuildOptsCLI
     -> Maybe (RIO BuildConfig ())
@@ -233,7 +219,7 @@ withBuildConfigExt
     -- OS even if Docker is enabled for builds.  The build config is not
     -- available in this action, since that would require build tools to be
     -- installed on the host OS.
-    -> (Maybe FileLock -> RIO EnvConfig ())
+    -> (Maybe FileLock -> RIO EnvConfig a)
     -- ^ Action that uses the build config.  If Docker is enabled for builds,
     -- this will be run in a Docker container.
     -> Maybe (RIO BuildConfig ())
@@ -241,9 +227,10 @@ withBuildConfigExt
     -- OS even if Docker is enabled for builds.  The build config is not
     -- available in this action, since that would require build tools to be
     -- installed on the host OS.
-    -> IO ()
-withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inner mafter =
-  withActualBuildConfigAndLock go $ \lk0 -> do
+    -> RIO BuildConfig a
+withBuildConfigExt skipDocker needTargets boptsCLI mbefore inner mafter = do
+  root <- view stackRootL
+  withUserFileLock root $ \lk0 -> do
     -- A local bit of state for communication between callbacks:
     curLk <- newIORef lk0
     let inner' lk =
@@ -252,7 +239,7 @@ withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inn
           -- trade in the lock here.
           do dir <- installationRootDeps
              -- Hand-over-hand locking:
-             withUserFileLock go dir $ \lk2 -> do
+             withUserFileLock dir $ \lk2 -> do
                writeIORef curLk lk2
                munlockFile lk
                logDebug "Starting to execute command inside EnvConfig"
@@ -266,9 +253,9 @@ withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inn
 
     compilerVersion <- view wantedCompilerVersionL
     case skipDocker of
-      SkipDocker -> do
-        sequence_ mbefore
-        Nix.reexecWithOptionalShell projectRoot compilerVersion (inner'' lk0)
+      SkipDocker ->
+        sequence_ mbefore *>
+        Nix.reexecWithOptionalShell projectRoot compilerVersion (inner'' lk0) <*
         sequence_ mafter
       WithDocker -> Docker.reexecWithOptionalContainer
                       projectRoot
@@ -283,16 +270,15 @@ withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inn
 -- Plumbing for --test and --bench flags
 withBuildConfigDot
     :: DotOpts
-    -> GlobalOpts
     -> RIO EnvConfig ()
-    -> IO ()
-withBuildConfigDot opts go f = withBuildConfig go' NeedTargets boptsCLI f
+    -> RIO BuildConfig ()
+withBuildConfigDot opts f =
+    local (over globalOptsL modifyGO) $ withBuildConfig NeedTargets boptsCLI f
   where
     boptsCLI = defaultBuildOptsCLI
         { boptsCLITargets = dotTargets opts
         , boptsCLIFlags = dotFlags opts
         }
-    go' =
-        (if dotTestTargets opts then set (globalOptsBuildOptsMonoidL.buildOptsMonoidTestsL) (Just True) else id) $
+    modifyGO =
+        (if dotTestTargets opts then set (globalOptsBuildOptsMonoidL.buildOptsMonoidTestsL) (Just True) else id) .
         (if dotBenchTargets opts then set (globalOptsBuildOptsMonoidL.buildOptsMonoidBenchmarksL) (Just True) else id)
-        go

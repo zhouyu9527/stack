@@ -21,6 +21,7 @@ import           Path.Extra
 import           Stack.Constants
 import           Stack.Constants.Config
 import           Stack.GhcPkg as GhcPkg
+import           Stack.Runners
 import           Stack.Types.Config
 import qualified System.FilePath as FP
 import           System.IO (stderr)
@@ -29,13 +30,12 @@ import           RIO.Process (HasProcessContext (..), exeSearchPathL)
 
 -- | Print out useful path information in a human-readable format (and
 -- support others later).
-path ::
-       (HasEnvConfig envHaddocks, HasEnvConfig envNoHaddocks)
-    => (RIO envNoHaddocks () -> IO ())
-    -> (RIO envHaddocks () -> IO ())
+path
+    :: (GlobalOpts -> GlobalOpts) -- ^ without haddocks
+    -> (GlobalOpts -> GlobalOpts) -- ^ with haddocks
     -> [Text]
-    -> IO ()
-path runNoHaddocks runHaddocks keys =
+    -> RIO Runner ()
+path withoutHaddocks withHaddocks keys =
     do let deprecated = filter ((`elem` keys) . fst) deprecatedPathKeys
        liftIO $ forM_ deprecated $ \(oldOption, newOption) -> T.hPutStrLn stderr $ T.unlines
            [ ""
@@ -53,13 +53,14 @@ path runNoHaddocks runHaddocks keys =
            toEither (_, k, UseHaddocks p) = Left (k, p)
            toEither (_, k, WithoutHaddocks p) = Right (k, p)
            (with, without) = partitionEithers $ map toEither goodPaths
-           printKeys runEnv extractors single = runEnv $ do
+           printKeys modifyGO extractors single = local (over globalOptsL modifyGO) $ do
              pathInfo <- fillPathInfo
              liftIO $ forM_ extractors $ \(key, extractPath) -> do
                let prefix = if single then "" else key <> ": "
                T.putStrLn $ prefix <> extractPath pathInfo
-       printKeys runHaddocks with singlePath
-       printKeys runNoHaddocks without singlePath
+       withLoadConfig $ withActualBuildConfig $ withDefaultBuildConfig $ do
+         printKeys withHaddocks with singlePath
+         printKeys withoutHaddocks without singlePath
 
 fillPathInfo :: HasEnvConfig env => RIO env PathInfo
 fillPathInfo = do

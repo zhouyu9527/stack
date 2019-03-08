@@ -34,13 +34,12 @@ import RIO.PrettyPrint.DefaultStyles (defaultStyles)
 import RIO.PrettyPrint.Types (StyleSpec)
 import RIO.PrettyPrint.StylesUpdate (StylesUpdate (..), stylesUpdateL)
 import Stack.Dot
-import Stack.Runners (withLoadConfig, withDefaultBuildConfig, withBuildConfigDot)
+import Stack.Runners
 import Stack.Options.DotParser (listDepsOptsParser)
 import Stack.Types.Config
 import System.Console.ANSI.Codes (SGR (Reset), setSGRCode, sgrToCode)
 import System.Process.PagerEditor (pageText)
 import System.Directory (listDirectory)
-import System.IO (stderr, hPutStrLn)
 
 data LsView
     = Local
@@ -277,25 +276,25 @@ handleRemote lsOpts = do
   where
     urlInfo = "https://www.stackage.org/snapshots"
 
-lsCmd :: LsCmdOpts -> GlobalOpts -> IO ()
-lsCmd lsOpts go =
+lsCmd :: LsCmdOpts -> RIO Runner ()
+lsCmd lsOpts =
     case lsView lsOpts of
         LsSnapshot SnapshotOpts {..} ->
+            withLoadConfig $ withActualBuildConfig $ withDefaultBuildConfig $
             case soptViewType of
-                Local -> withDefaultBuildConfig go (handleLocal lsOpts)
-                Remote -> withDefaultBuildConfig go (handleRemote lsOpts)
-        LsDependencies depOpts -> listDependenciesCmd False depOpts go
-        LsStyles stylesOpts -> withLoadConfig go (listStylesCmd stylesOpts)
+                Local -> handleLocal lsOpts
+                Remote -> handleRemote lsOpts
+        LsDependencies depOpts -> listDependenciesCmd False depOpts
+        LsStyles stylesOpts -> withLoadConfig (listStylesCmd stylesOpts)
 
 -- | List the dependencies
-listDependenciesCmd :: Bool -> ListDepsOpts -> GlobalOpts -> IO ()
-listDependenciesCmd deprecated opts go = do
+listDependenciesCmd :: Bool -> ListDepsOpts -> RIO Runner ()
+listDependenciesCmd deprecated opts = do
     when
         deprecated
-        (hPutStrLn
-             stderr
+        (logError
              "DEPRECATED: Use ls dependencies instead. Will be removed in next major version.")
-    withBuildConfigDot (listDepsDotOpts opts) go $ listDependencies opts
+    withLoadConfig $ withActualBuildConfig $ withBuildConfigDot (listDepsDotOpts opts) $ listDependencies opts
 
 lsViewLocalCmd :: OA.Mod OA.CommandFields LsView
 lsViewLocalCmd =

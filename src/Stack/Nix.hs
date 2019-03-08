@@ -34,8 +34,8 @@ reexecWithOptionalShell
     :: HasConfig env
     => Path Abs Dir -- ^ project root
     -> WantedCompiler
-    -> RIO env () -- ^ inner
-    -> RIO env ()
+    -> RIO env a -- ^ inner
+    -> RIO env a
 reexecWithOptionalShell projectRoot compilerVersion inner =
   do config <- view configL
      inShell <- getInNixShell
@@ -59,7 +59,7 @@ runShellAndExit
     => Path Abs Dir
     -> WantedCompiler
     -> RIO env (String, [String])
-    -> RIO env ()
+    -> RIO env void
 runShellAndExit projectRoot compilerVersion getCmdArgs = do
    config <- view configL
    envOverride <- view processContextL

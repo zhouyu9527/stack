@@ -112,7 +112,7 @@ import           System.Environment (getProgName, getArgs, withArgs)
 import           System.Exit
 import           System.FilePath (isValid, pathSeparator, takeDirectory)
 import qualified System.FilePath as FP
-import           System.IO (stderr, stdin, stdout, BufferMode(..), hPutStrLn, hPrint, hGetEncoding, hSetEncoding)
+import           System.IO (stderr, stdin, stdout, BufferMode(..), hPutStrLn, hGetEncoding, hSetEncoding)
 import           System.Terminal (hIsTerminalDeviceOrMinTTY)
 
 -- | Change the character encoding of the given Handle to transliterate
@@ -203,14 +203,14 @@ main = do
               unless (checkVersion MatchMinor expectVersion' (mkVersion' Meta.version))
                   $ throwIO $ InvalidReExecVersion expectVersion (showVersion Meta.version)
           _ -> return ()
-      run global `catch` \e ->
+      withRunner global $ run `catch` \e ->
           -- This special handler stops "stack: " from being printed before the
           -- exception
           case fromException e of
-              Just ec -> exitWith ec
+              Just ec -> liftIO $ exitWith ec
               Nothing -> do
-                  hPrint stderr e
-                  exitFailure
+                  logError $ displayShow e
+                  liftIO exitFailure
 
 -- Vertically combine only the error component of the first argument with the
 -- error component of the second.
@@ -221,7 +221,7 @@ commandLineHandler
   :: FilePath
   -> String
   -> Bool
-  -> IO (GlobalOptsMonoid, GlobalOpts -> IO ())
+  -> IO (GlobalOptsMonoid, RIO Runner ())
 commandLineHandler currentDir progName isInterpreter = complicatedOptions
   (mkVersion' Meta.version)
   (Just versionString')
@@ -495,7 +495,7 @@ commandLineHandler currentDir progName isInterpreter = complicatedOptions
         )
       where
         -- addCommand hiding global options
-        addCommand' :: String -> String -> (a -> GlobalOpts -> IO ()) -> Parser a
+        addCommand' :: String -> String -> (a -> RIO Runner ()) -> Parser a
                     -> AddCommand
         addCommand' cmd title constr =
             addCommand cmd title globalFooter constr (\_ gom -> gom) (globalOpts OtherCmdGlobalOpts)
@@ -506,13 +506,13 @@ commandLineHandler currentDir progName isInterpreter = complicatedOptions
             addSubCommands cmd title globalFooter (globalOpts OtherCmdGlobalOpts)
 
         -- Additional helper that hides global options and shows build options
-        addBuildCommand' :: String -> String -> (a -> GlobalOpts -> IO ()) -> Parser a
+        addBuildCommand' :: String -> String -> (a -> RIO Runner ()) -> Parser a
                          -> AddCommand
         addBuildCommand' cmd title constr =
             addCommand cmd title globalFooter constr (\_ gom -> gom) (globalOpts BuildCmdGlobalOpts)
 
         -- Additional helper that hides global options and shows some ghci options
-        addGhciCommand' :: String -> String -> (a -> GlobalOpts -> IO ()) -> Parser a
+        addGhciCommand' :: String -> String -> (a -> RIO Runner ()) -> Parser a
                          -> AddCommand
         addGhciCommand' cmd title constr =
             addCommand cmd title globalFooter constr (\_ gom -> gom) (globalOpts GhciCmdGlobalOpts)
@@ -531,7 +531,7 @@ commandLineHandler currentDir progName isInterpreter = complicatedOptions
     globalFooter = "Run 'stack --help' for global options that apply to all subcommands."
 
 type AddCommand =
-    ExceptT (GlobalOpts -> IO ()) (Writer (Mod CommandFields (GlobalOpts -> IO (), GlobalOptsMonoid))) ()
+    ExceptT (RIO Runner ()) (Writer (Mod CommandFields (RIO Runner (), GlobalOptsMonoid))) ()
 
 -- | fall-through to external executables in `git` style if they exist
 -- (i.e. `stack something` looks for `stack-something` before
@@ -566,7 +566,7 @@ interpreterHandler
   => FilePath
   -> [String]
   -> ParserFailure ParserHelp
-  -> IO (GlobalOptsMonoid, (GlobalOpts -> IO (), t))
+  -> IO (GlobalOptsMonoid, (RIO Runner (), t))
 interpreterHandler currentDir args f = do
   -- args can include top-level config such as --extra-lib-dirs=... (set by
   -- nix-shell) - we need to find the first argument which is a file, everything
@@ -619,21 +619,17 @@ interpreterHandler currentDir args f = do
       (a,b) <- withArgs cmdArgs parseCmdLine
       return (a,(b,mempty))
 
-pathCmd :: [Text] -> GlobalOpts -> IO ()
-pathCmd keys go = Stack.Path.path withoutHaddocks withHaddocks keys
+pathCmd :: [Text] -> RIO Runner ()
+pathCmd = Stack.Path.path goWithout goWith
   where
-    continueOnSuccess f = catch f ignoreSuccess
-    ignoreSuccess ExitSuccess = return ()
-    ignoreSuccess ex = throwIO ex
-    withoutHaddocks = continueOnSuccess . withDefaultBuildConfig goWithout
-    goWithout = go & globalOptsBuildOptsMonoidL . buildOptsMonoidHaddockL ?~ False
-    withHaddocks = continueOnSuccess . withDefaultBuildConfig goWith
-    goWith = go & globalOptsBuildOptsMonoidL . buildOptsMonoidHaddockL ?~ True
+    goWithout go = go & globalOptsBuildOptsMonoidL . buildOptsMonoidHaddockL ?~ False
+    goWith go = go & globalOptsBuildOptsMonoidL . buildOptsMonoidHaddockL ?~ True
 
 
-setupCmd :: SetupCmdOpts -> GlobalOpts -> IO ()
-setupCmd sco@SetupCmdOpts{..} go@GlobalOpts{..} =
-  withActualBuildConfigAndLock go $ \lk -> do
+setupCmd :: SetupCmdOpts -> RIO Runner ()
+setupCmd sco@SetupCmdOpts{..} =
+  withLoadConfig $
+  withActualBuildConfigAndLock $ \lk -> do
 
     -- FIXME time to just rip off the bandaid and kill UpgradeCabal
     nixEnabled <- view $ configL.to (nixEnable . configNix)
@@ -671,35 +667,37 @@ setupCmd sco@SetupCmdOpts{..} go@GlobalOpts{..} =
 -- since it does not need to run any commands to get information on
 -- the project. This is a change as of #4480. For previous behavior,
 -- see issue #2010.
-cleanCmd :: CleanOpts -> GlobalOpts -> IO ()
-cleanCmd opts go = withActualBuildConfigAndLock go $ \_lock -> clean opts
+cleanCmd :: CleanOpts -> RIO Runner ()
+cleanCmd opts = withLoadConfig $ withActualBuildConfigAndLock $ \_lock -> clean opts
 
 -- | Helper for build and install commands
-buildCmd :: BuildOptsCLI -> GlobalOpts -> IO ()
-buildCmd opts go = do
+buildCmd :: BuildOptsCLI -> RIO Runner ()
+buildCmd opts = do
   when (any (("-prof" `elem`) . either (const []) id . parseArgs Escaping) (boptsCLIGhcOptions opts)) $ do
-    hPutStrLn stderr "Error: When building with stack, you should not use the -prof GHC option"
-    hPutStrLn stderr "Instead, please use --library-profiling and --executable-profiling"
-    hPutStrLn stderr "See: https://github.com/commercialhaskell/stack/issues/1015"
-    exitFailure
-  case boptsCLIFileWatch opts of
-    FileWatchPoll -> fileWatchPoll stderr (inner . Just)
-    FileWatch -> fileWatch stderr (inner . Just)
+    logError "Error: When building with stack, you should not use the -prof GHC option"
+    logError "Instead, please use --library-profiling and --executable-profiling"
+    logError "See: https://github.com/commercialhaskell/stack/issues/1015"
+    liftIO exitFailure
+  withLoadConfig $ withActualBuildConfig $ case boptsCLIFileWatch opts of
+    FileWatchPoll -> withRunInIO $ \run -> fileWatchPoll stderr (run . inner . Just)
+    FileWatch -> withRunInIO $ \run -> fileWatch stderr (run . inner . Just)
     NoFileWatch -> inner Nothing
   where
-    inner setLocalFiles = withBuildConfigAndLock go' NeedTargets opts $ \lk ->
-        Stack.Build.build setLocalFiles lk
+    inner setLocalFiles =
+      local (over globalOptsL modifyGO) $
+      withBuildConfigAndLock NeedTargets opts $ \lk ->
+      Stack.Build.build setLocalFiles lk
     -- Read the build command from the CLI and enable it to run
-    go' = case boptsCLICommand opts of
+    modifyGO go =
+          case boptsCLICommand opts of
                Test -> set (globalOptsBuildOptsMonoidL.buildOptsMonoidTestsL) (Just True) go
                Haddock -> set (globalOptsBuildOptsMonoidL.buildOptsMonoidHaddockL) (Just True) go
                Bench -> set (globalOptsBuildOptsMonoidL.buildOptsMonoidBenchmarksL) (Just True) go
                Install -> set (globalOptsBuildOptsMonoidL.buildOptsMonoidInstallExesL) (Just True) go
                Build -> go -- Default case is just Build
 
-uninstallCmd :: [String] -> GlobalOpts -> IO ()
-uninstallCmd _ go =
-    withRunnerGlobal go $
+uninstallCmd :: [String] -> RIO Runner ()
+uninstallCmd _ =
     prettyErrorL
       [ flow "stack does not manage installations in global locations."
       , flow "The only global mutation stack performs is executable copying."
@@ -708,28 +706,30 @@ uninstallCmd _ go =
       ]
 
 -- | Unpack packages to the filesystem
-unpackCmd :: ([String], Maybe Text) -> GlobalOpts -> IO ()
-unpackCmd (names, Nothing) go = unpackCmd (names, Just ".") go
-unpackCmd (names, Just dstPath) go =
-  withLoadConfigAndLock go $ \_lk -> do -- FIXME does this need to deal with Docker?
+unpackCmd :: ([String], Maybe Text) -> RIO Runner ()
+unpackCmd (names, Nothing) = unpackCmd (names, Just ".")
+unpackCmd (names, Just dstPath) =
+  withLoadConfigAndLock $ \_lk -> do -- FIXME does this need to deal with Docker?
+    go <- view globalOptsL
     mSnapshotDef <- mapM (makeConcreteResolver >=> flip loadResolver Nothing) (globalResolver go)
     dstPath' <- resolveDir' $ T.unpack dstPath
     unpackPackages mSnapshotDef dstPath' names
 
 -- | Update the package index
-updateCmd :: () -> GlobalOpts -> IO ()
-updateCmd () go =
-  withLoadConfigAndLock go -- FIXME does this need to deal with Docker?
+updateCmd :: () -> RIO Runner ()
+updateCmd () =
+  withLoadConfigAndLock -- FIXME does this need to deal with Docker?
   (\_lk -> void (updateHackageIndex Nothing))
 
-upgradeCmd :: UpgradeOpts -> GlobalOpts -> IO ()
-upgradeCmd upgradeOpts' go =
+upgradeCmd :: UpgradeOpts -> RIO Runner ()
+upgradeCmd upgradeOpts' = do
+  go <- view globalOptsL
   case globalResolver go of
-    Just _ -> withRunnerGlobal go $ do
+    Just _ -> do
       logError "You cannot use the --resolver option with the upgrade command"
       liftIO exitFailure
     Nothing ->
-      withGlobalConfigAndLock go $
+      withGlobalConfigAndLock $
       upgrade
         (globalConfigMonoid go)
 #ifdef USE_GIT_INFO
@@ -740,23 +740,23 @@ upgradeCmd upgradeOpts' go =
         upgradeOpts'
 
 -- | Upload to Hackage
-uploadCmd :: SDistOpts -> GlobalOpts -> IO ()
-uploadCmd (SDistOpts [] _ _ _ _ _ _) go =
-    withRunnerGlobal go $
+uploadCmd :: SDistOpts -> RIO Runner ()
+uploadCmd (SDistOpts [] _ _ _ _ _ _) = do
     prettyErrorL $
         [ flow "To upload the current package, please run"
         , PP.style Shell "stack upload ."
         , flow "(with the period at the end)"
         ]
-uploadCmd sdistOpts go = do
+    liftIO exitFailure
+uploadCmd sdistOpts = do
     let partitionM _ [] = return ([], [])
         partitionM f (x:xs) = do
             r <- f x
             (as, bs) <- partitionM f xs
             return $ if r then (x:as, bs) else (as, x:bs)
-    (files, nonFiles) <- partitionM D.doesFileExist (sdoptsDirsToWorkWith sdistOpts)
-    (dirs, invalid) <- partitionM D.doesDirectoryExist nonFiles
-    withDefaultBuildConfigAndLock go $ \_ -> do
+    (files, nonFiles) <- liftIO $ partitionM D.doesFileExist (sdoptsDirsToWorkWith sdistOpts)
+    (dirs, invalid) <- liftIO $ partitionM D.doesDirectoryExist nonFiles
+    withLoadConfig $ withActualBuildConfig $ withDefaultBuildConfigAndLock $ \_ -> do
         unless (null invalid) $ do
             let invalidList = bulletedList $ map (PP.style File . fromString) invalid
             prettyErrorL
@@ -807,9 +807,9 @@ uploadCmd sdistOpts go = do
                          tarPath
                          tarBytes)
 
-sdistCmd :: SDistOpts -> GlobalOpts -> IO ()
-sdistCmd sdistOpts go =
-    withDefaultBuildConfig go $ do -- No locking needed.
+sdistCmd :: SDistOpts -> RIO Runner ()
+sdistCmd sdistOpts =
+    withLoadConfig $ withActualBuildConfig $ withDefaultBuildConfig $ do -- No locking needed.
         -- If no directories are specified, build all sdist tarballs.
         dirs' <- if null (sdoptsDirsToWorkWith sdistOpts)
             then do
@@ -843,17 +843,17 @@ sdistCmd sdistOpts go =
             D.copyFile (toFilePath tarPath) targetTarPath
 
 -- | Execute a command.
-execCmd :: ExecOpts -> GlobalOpts -> IO ()
-execCmd ExecOpts {..} go@GlobalOpts{..} =
+execCmd :: ExecOpts -> RIO Runner ()
+execCmd ExecOpts {..} =
     case eoExtra of
-        ExecOptsPlain -> withActualBuildConfigAndLock go $ \lk -> do
+        ExecOptsPlain -> withLoadConfig $ withActualBuildConfigAndLock $ \lk -> do
           compilerVersion <- view wantedCompilerVersionL
           projectRoot <- view projectRootL
           Docker.reexecWithOptionalContainer
               projectRoot
               -- Unlock before transferring control away, whether using docker or not:
               (Just $ munlockFile lk)
-              (liftIO $ withDefaultBuildConfigAndLock go $ \buildLock -> do -- FIXME this has to be broken, right? we already did the loading!
+              (withDefaultBuildConfigAndLock $ \buildLock -> do -- FIXME this has to be broken, right? we already did the loading!
                   config <- view configL
                   menv <- liftIO $ configProcessContextSettings config plainEnvSettings
                   withProcessContext menv $ do
@@ -871,7 +871,7 @@ execCmd ExecOpts {..} go@GlobalOpts{..} =
                 boptsCLI = defaultBuildOptsCLI
                            { boptsCLITargets = map T.pack targets
                            }
-            withBuildConfigAndLock go AllowNoTargets boptsCLI $ \lk -> do
+            withLoadConfig $ withActualBuildConfig $ withBuildConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
               unless (null targets) $ Stack.Build.build Nothing lk
 
               config <- view configL
@@ -937,8 +937,8 @@ execCmd ExecOpts {..} go@GlobalOpts{..} =
         Just p                   -> withUnliftIO $ \ul -> D.withCurrentDirectory p $ unliftIO ul callback
 
 -- | Evaluate some haskell code inline.
-evalCmd :: EvalOpts -> GlobalOpts -> IO ()
-evalCmd EvalOpts {..} go@GlobalOpts {..} = execCmd execOpts go
+evalCmd :: EvalOpts -> RIO Runner ()
+evalCmd EvalOpts {..} = execCmd execOpts
     where
       execOpts =
           ExecOpts { eoCmd = ExecGhc
@@ -947,8 +947,8 @@ evalCmd EvalOpts {..} go@GlobalOpts {..} = execCmd execOpts go
                    }
 
 -- | Run GHCi in the context of a project.
-ghciCmd :: GhciOpts -> GlobalOpts -> IO ()
-ghciCmd ghciOpts go@GlobalOpts{..} =
+ghciCmd :: GhciOpts -> RIO Runner ()
+ghciCmd ghciOpts =
   let boptsCLI = defaultBuildOptsCLI
           -- using only additional packages, targets then get overriden in `ghci`
           { boptsCLITargets = map T.pack (ghciAdditionalPackages  ghciOpts)
@@ -956,7 +956,9 @@ ghciCmd ghciOpts go@GlobalOpts{..} =
           , boptsCLIFlags = ghciFlags ghciOpts
           , boptsCLIGhcOptions = ghciGhcOptions ghciOpts
           }
-  in withBuildConfigAndLock go AllowNoTargets boptsCLI $ \lk -> do
+  in withLoadConfig $
+     withActualBuildConfig $
+     withBuildConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
     munlockFile lk -- Don't hold the lock while in the GHCI.
     bopts <- view buildOptsL
     -- override env so running of tests and benchmarks is disabled
@@ -968,23 +970,23 @@ ghciCmd ghciOpts go@GlobalOpts{..} =
           (ghci ghciOpts)
 
 -- | List packages in the project.
-idePackagesCmd :: (IDE.OutputStream, IDE.ListPackagesCmd) -> GlobalOpts -> IO ()
-idePackagesCmd (stream, cmd) go =
-    withActualBuildConfig go (IDE.listPackages stream cmd)
+idePackagesCmd :: (IDE.OutputStream, IDE.ListPackagesCmd) -> RIO Runner ()
+idePackagesCmd (stream, cmd) =
+    withLoadConfig $ withActualBuildConfig $ IDE.listPackages stream cmd
 
 -- | List targets in the project.
-ideTargetsCmd :: IDE.OutputStream -> GlobalOpts -> IO ()
-ideTargetsCmd stream go =
-    withActualBuildConfig go (IDE.listTargets stream)
+ideTargetsCmd :: IDE.OutputStream -> RIO Runner ()
+ideTargetsCmd stream =
+    withLoadConfig $ withActualBuildConfig $ IDE.listTargets stream
 
 -- | Pull the current Docker image.
-dockerPullCmd :: () -> GlobalOpts -> IO ()
-dockerPullCmd () go = withLoadConfig go $ Docker.preventInContainer Docker.pull
+dockerPullCmd :: () -> RIO Runner ()
+dockerPullCmd () = withLoadConfig $ Docker.preventInContainer Docker.pull
 
 -- | Reset the Docker sandbox.
-dockerResetCmd :: Bool -> GlobalOpts -> IO ()
-dockerResetCmd keepHome go@GlobalOpts{..} =
-  withLoadConfig go $ do
+dockerResetCmd :: Bool -> RIO Runner ()
+dockerResetCmd keepHome = do
+  withLoadConfig $ do
     mProjectRoot <- view $ to configProjectRoot
     case mProjectRoot of
       Nothing -> error "Cannot call docker reset without a project"
@@ -992,22 +994,21 @@ dockerResetCmd keepHome go@GlobalOpts{..} =
         Docker.preventInContainer $ Docker.reset projectRoot keepHome
 
 -- | Cleanup Docker images and containers.
-dockerCleanupCmd :: Docker.CleanupOpts -> GlobalOpts -> IO ()
-dockerCleanupCmd cleanupOpts go@GlobalOpts{..} =
-  withLoadConfig go $ Docker.preventInContainer $ Docker.cleanup cleanupOpts
+dockerCleanupCmd :: Docker.CleanupOpts -> RIO Runner ()
+dockerCleanupCmd cleanupOpts =
+  withLoadConfig $
+  Docker.preventInContainer $ Docker.cleanup cleanupOpts
 
-cfgSetCmd :: ConfigCmd.ConfigCmdSet -> GlobalOpts -> IO ()
-cfgSetCmd co go@GlobalOpts{..} =
-    withGlobalConfigAndLock
-        go
-        (cfgCmdSet go co)
+cfgSetCmd :: ConfigCmd.ConfigCmdSet -> RIO Runner ()
+cfgSetCmd co = do
+  go <- view globalOptsL
+  withGlobalConfigAndLock (cfgCmdSet go co)
 
-imgDockerCmd :: (Bool, [Text]) -> GlobalOpts -> IO ()
-imgDockerCmd (rebuild,images) go@GlobalOpts{..} = withLoadConfig go $ do
-    mProjectRoot <- view $ to configProjectRoot
-    liftIO $ withBuildConfigExt -- FIXME this repeats the withLoadConfig call
+imgDockerCmd :: (Bool, [Text]) -> RIO Runner ()
+imgDockerCmd (rebuild,images) = withLoadConfig $ withActualBuildConfig $ do
+    mProjectRoot <- view $ configL.to configProjectRoot
+    withBuildConfigExt
         WithDocker
-        go
         NeedTargets
         defaultBuildOptsCLI
         Nothing
@@ -1017,51 +1018,61 @@ imgDockerCmd (rebuild,images) go@GlobalOpts{..} = withLoadConfig go $ do
         (Just $ Image.createContainerImageFromStage mProjectRoot images)
 
 -- | Project initialization
-initCmd :: InitOpts -> GlobalOpts -> IO ()
-initCmd initOpts go = do
+initCmd :: InitOpts -> RIO Runner ()
+initCmd initOpts = do
     pwd <- getCurrentDir
-    withGlobalConfigAndLock go (initProject IsInitCmd pwd initOpts (globalResolver go))
+    go <- view globalOptsL
+    withGlobalConfigAndLock (initProject IsInitCmd pwd initOpts (globalResolver go))
 
 -- | Create a project directory structure and initialize the stack config.
-newCmd :: (NewOpts,InitOpts) -> GlobalOpts -> IO ()
-newCmd (newOpts,initOpts) go@GlobalOpts{..} =
-    withGlobalConfigAndLock go $ do
+newCmd :: (NewOpts,InitOpts) -> RIO Runner ()
+newCmd (newOpts,initOpts) =
+    withGlobalConfigAndLock $ do
         dir <- new newOpts (forceOverwrite initOpts)
         exists <- doesFileExist $ dir </> stackDotYaml
+        go <- view globalOptsL
         when (forceOverwrite initOpts || not exists) $
-            initProject IsNewCmd dir initOpts globalResolver
+            initProject IsNewCmd dir initOpts (globalResolver go)
 
 -- | List the available templates.
-templatesCmd :: () -> GlobalOpts -> IO ()
-templatesCmd () go = withRunnerGlobal go templatesHelp
+templatesCmd :: () -> RIO Runner ()
+templatesCmd () = templatesHelp
 
 -- | Fix up extra-deps for a project
 solverCmd :: Bool -- ^ modify stack.yaml automatically?
-          -> GlobalOpts
-          -> IO ()
-solverCmd fixStackYaml go =
-    withDefaultBuildConfigAndLock go (\_ -> solveExtraDeps fixStackYaml)
+          -> RIO Runner ()
+solverCmd fixStackYaml =
+  withLoadConfig $
+  withActualBuildConfig $
+  withDefaultBuildConfigAndLock (\_ -> solveExtraDeps fixStackYaml)
 
 -- | Visualize dependencies
-dotCmd :: DotOpts -> GlobalOpts -> IO ()
-dotCmd dotOpts go = withBuildConfigDot dotOpts go $ dot dotOpts
+dotCmd :: DotOpts -> RIO Runner ()
+dotCmd dotOpts =
+  withLoadConfig $
+  withActualBuildConfig $
+  withBuildConfigDot dotOpts $ dot dotOpts
 
 -- | Query build information
-queryCmd :: [String] -> GlobalOpts -> IO ()
-queryCmd selectors go = withDefaultBuildConfig go $ queryBuildInfo $ map T.pack selectors
+queryCmd :: [String] -> RIO Runner ()
+queryCmd selectors =
+  withLoadConfig $
+  withActualBuildConfig $
+  withDefaultBuildConfig $
+  queryBuildInfo $ map T.pack selectors
 
 -- | Generate a combined HPC report
-hpcReportCmd :: HpcReportOpts -> GlobalOpts -> IO ()
-hpcReportCmd hropts go = do
+hpcReportCmd :: HpcReportOpts -> RIO Runner ()
+hpcReportCmd hropts = do
     let (tixFiles, targetNames) = partition (".tix" `T.isSuffixOf`) (hroptsInputs hropts)
         boptsCLI = defaultBuildOptsCLI
           { boptsCLITargets = if hroptsAll hropts then [] else targetNames }
-    withBuildConfig go AllowNoTargets boptsCLI $
-        generateHpcReportForTargets hropts tixFiles targetNames
+    withLoadConfig $ withActualBuildConfig $
+      withBuildConfig AllowNoTargets boptsCLI $
+      generateHpcReportForTargets hropts tixFiles targetNames
 
-freezeCmd :: FreezeOpts -> GlobalOpts -> IO ()
-freezeCmd freezeOpts go =
-  withDefaultBuildConfig go $ freeze freezeOpts
+freezeCmd :: FreezeOpts -> RIO Runner ()
+freezeCmd = withLoadConfig . withActualBuildConfig . withDefaultBuildConfig . freeze
 
 data MainException = InvalidReExecVersion String String
                    | UpgradeCabalUnusable

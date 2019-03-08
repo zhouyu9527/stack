@@ -92,10 +92,10 @@ reexecWithOptionalContainer
     :: HasConfig env
     => Path Abs Dir -- ^ project root
     -> Maybe (RIO env ()) -- ^ perform before
-    -> RIO env () -- ^ inner action
+    -> RIO env a -- ^ inner action
     -> Maybe (RIO env ()) -- ^ perform after
     -> Maybe (RIO env ()) -- ^ release
-    -> RIO env ()
+    -> RIO env a
 reexecWithOptionalContainer projectRoot =
     execWithOptionalContainer projectRoot getCmdArgs
   where
@@ -193,24 +193,21 @@ execWithOptionalContainer
     => Path Abs Dir -- ^ project root
     -> GetCmdArgs env
     -> Maybe (RIO env ()) -- ^ before
-    -> RIO env () -- ^ inner
+    -> RIO env a -- ^ inner
     -> Maybe (RIO env ()) -- ^ after
     -> Maybe (RIO env ()) -- ^ release
-    -> RIO env ()
+    -> RIO env a
 execWithOptionalContainer projectRoot getCmdArgs mbefore inner mafter mrelease =
   do config <- view configL
      inContainer <- getInContainer
      isReExec <- view reExecL
      if | inContainer && not isReExec && (isJust mbefore || isJust mafter) ->
             throwIO OnlyOnHostException
-        | inContainer ->
-            do inner
-               liftIO exitSuccess
+        | inContainer -> inner
         | not (dockerEnable (configDocker config)) ->
-            do fromMaybeAction mbefore
-               inner
-               fromMaybeAction mafter
-               liftIO exitSuccess
+            fromMaybeAction mbefore *>
+            inner <*
+            fromMaybeAction mafter
         | otherwise ->
             do fromMaybeAction mrelease
                runContainerAndExit
@@ -237,7 +234,7 @@ runContainerAndExit
   -> Path Abs Dir -- ^ Project root
   -> RIO env ()  -- ^ Action to run before
   -> RIO env ()  -- ^ Action to run after
-  -> RIO env ()
+  -> RIO env void
 runContainerAndExit getCmdArgs
                     projectRoot
                     before

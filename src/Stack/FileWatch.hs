@@ -16,6 +16,8 @@ import System.FSNotify
 import System.IO (hPutStrLn, getLine)
 import System.Terminal
 
+-- FIXME update this module to use RIO and LogFunc
+
 fileWatch :: Handle
           -> ((Set (Path Abs File) -> IO ()) -> IO ())
           -> IO ()

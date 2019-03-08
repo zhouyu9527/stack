@@ -398,17 +398,15 @@ getDefaultLocalProgramsBase configStackRoot configPlatform override =
 -- | Load the configuration, using current directory, environment variables,
 -- and defaults as necessary.
 loadConfig :: HasRunner env
-           => ConfigMonoid
-           -- ^ Config monoid from parsed command-line arguments
-           -> Maybe AbstractResolver
-           -- ^ Override resolver
-           -> Maybe WantedCompiler
-           -- ^ Override compiler
-           -> StackYamlLoc (Path Abs File)
+           => StackYamlLoc (Path Abs File) -- FIXME get rid of this
            -- ^ Where the project configuration comes from
            -> (Config -> RIO env a)
            -> RIO env a
-loadConfig configArgs mresolver mcompiler mstackYaml inner = do
+loadConfig mstackYaml inner = do
+    go <- view globalOptsL
+    let configArgs = globalConfigMonoid go
+        mresolver = globalResolver go
+        mcompiler = globalCompiler go
     (stackRoot, userOwnsStackRoot) <- determineStackRootAndOwnership configArgs
 
     mproject <- loadProjectConfig mstackYaml
