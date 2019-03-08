@@ -6,19 +6,24 @@
 
 -- | Utilities for running stack commands.
 module Stack.Runners
-    ( withGlobalConfigAndLock
-    , withBuildConfigAndLock
-    , withDefaultBuildConfigAndLock
-    , withBuildConfig
-    , withDefaultBuildConfig
-    , withBuildConfigExt
-    , withBuildConfigDot
+    ( -- * File locking
+      withUserFileLock
+    , munlockFile
+      -- * Runner
+    , withRunnerGlobal
+      -- * Config
+    , withGlobalConfigAndLock
     , withLoadConfig
     , withLoadConfigAndLock
-    , withUserFileLock
-    , munlockFile
-    , withRunnerGlobal
+      -- * BuildConfig
     , withActualBuildConfigAndLock
+      -- * EnvConfig
+    , withBuildConfig
+    , withBuildConfigAndLock
+    , withDefaultBuildConfig
+    , withDefaultBuildConfigAndLock
+    , withBuildConfigExt
+    , withBuildConfigDot
     ) where
 
 import           Stack.Prelude
@@ -78,6 +83,26 @@ withUserFileLock go@GlobalOpts{} dir act = do
                                             act $ Just lk))
         else act Nothing
 
+-- | Unlock a lock file, if the value is Just
+munlockFile :: MonadIO m => Maybe FileLock -> m ()
+munlockFile Nothing = return ()
+munlockFile (Just lk) = liftIO $ unlockFile lk
+
+withRunnerGlobal :: GlobalOpts -> RIO Runner a -> IO a
+withRunnerGlobal GlobalOpts{..} inner = do
+    defColorWhen <- defaultColorWhen
+    let globalColorWhen =
+            fromFirst defColorWhen (configMonoidColorWhen globalConfigMonoid)
+    withRunner
+        globalLogLevel
+        globalTimeInLog
+        globalTerminal
+        globalColorWhen
+        globalStylesUpdate
+        globalTermWidth
+        (isJust globalReExecVersion)
+        (\runner -> runRIO runner inner)
+
 -- | Loads global config, ignoring any configuration which would be
 -- loaded due to $PWD.
 withGlobalConfigAndLock
@@ -94,41 +119,20 @@ withGlobalConfigAndLock go@GlobalOpts{..} inner =
         withUserFileLock go (view stackRootL lc) $ \_lk ->
           runRIO lc inner
 
--- For now the non-locking version just unlocks immediately.
--- That is, there's still a serialization point.
-withDefaultBuildConfig
-    :: GlobalOpts
-    -> RIO EnvConfig ()
-    -> IO ()
-withDefaultBuildConfig go inner =
-    withBuildConfigAndLock go AllowNoTargets defaultBuildOptsCLI (\lk -> do munlockFile lk
-                                                                            inner)
-
-withBuildConfig
-    :: GlobalOpts
-    -> NeedTargets
-    -> BuildOptsCLI
-    -> RIO EnvConfig ()
-    -> IO ()
-withBuildConfig go needTargets boptsCLI inner =
-    withBuildConfigAndLock go needTargets boptsCLI (\lk -> do munlockFile lk
-                                                              inner)
-
-withDefaultBuildConfigAndLock
-    :: GlobalOpts
-    -> (Maybe FileLock -> RIO EnvConfig ())
-    -> IO ()
-withDefaultBuildConfigAndLock go inner =
-    withBuildConfigExt WithDocker go AllowNoTargets defaultBuildOptsCLI Nothing inner Nothing
-
-withBuildConfigAndLock
-    :: GlobalOpts
-    -> NeedTargets
-    -> BuildOptsCLI
-    -> (Maybe FileLock -> RIO EnvConfig ())
-    -> IO ()
-withBuildConfigAndLock go needTargets boptsCLI inner =
-    withBuildConfigExt WithDocker go needTargets boptsCLI Nothing inner Nothing
+-- | Load the configuration. Convenience function used
+-- throughout this module.
+withLoadConfig
+  :: GlobalOpts
+  -> (Config -> IO a)
+  -> IO a
+withLoadConfig go@GlobalOpts{..} inner = withRunnerGlobal go $ do
+    mstackYaml <- forM globalStackYaml resolveFile'
+    loadConfig globalConfigMonoid globalResolver globalCompiler mstackYaml $ \lc -> do
+      -- If we have been relaunched in a Docker container, perform in-container initialization
+      -- (switch UID, etc.).  We do this after first loading the configuration since it must
+      -- happen ASAP but needs a configuration.
+      forM_ globalDockerEntrypoint $ Docker.entrypoint lc
+      liftIO $ inner lc
 
 withLoadConfigAndLock
   :: GlobalOpts
@@ -147,6 +151,42 @@ withActualBuildConfigAndLock go inner =
   withLoadConfigAndLock go $ \lk -> do
     bconfig <- loadBuildConfig
     runRIO bconfig $ inner lk
+
+withBuildConfig
+    :: GlobalOpts
+    -> NeedTargets
+    -> BuildOptsCLI
+    -> RIO EnvConfig ()
+    -> IO ()
+withBuildConfig go needTargets boptsCLI inner =
+    withBuildConfigAndLock go needTargets boptsCLI (\lk -> do munlockFile lk
+                                                              inner)
+
+withBuildConfigAndLock
+    :: GlobalOpts
+    -> NeedTargets
+    -> BuildOptsCLI
+    -> (Maybe FileLock -> RIO EnvConfig ())
+    -> IO ()
+withBuildConfigAndLock go needTargets boptsCLI inner =
+    withBuildConfigExt WithDocker go needTargets boptsCLI Nothing inner Nothing
+
+-- For now the non-locking version just unlocks immediately.
+-- That is, there's still a serialization point.
+withDefaultBuildConfig
+    :: GlobalOpts
+    -> RIO EnvConfig ()
+    -> IO ()
+withDefaultBuildConfig go inner =
+    withBuildConfigAndLock go AllowNoTargets defaultBuildOptsCLI (\lk -> do munlockFile lk
+                                                                            inner)
+
+withDefaultBuildConfigAndLock
+    :: GlobalOpts
+    -> (Maybe FileLock -> RIO EnvConfig ())
+    -> IO ()
+withDefaultBuildConfigAndLock go inner =
+    withBuildConfigExt WithDocker go AllowNoTargets defaultBuildOptsCLI Nothing inner Nothing
 
 withBuildConfigExt
     :: WithDocker
@@ -204,41 +244,6 @@ withBuildConfigExt skipDocker go@GlobalOpts{..} needTargets boptsCLI mbefore inn
                       (Just $ liftIO $
                             do lk' <- readIORef curLk
                                munlockFile lk')
-
--- | Load the configuration. Convenience function used
--- throughout this module.
-withLoadConfig
-  :: GlobalOpts
-  -> (Config -> IO a)
-  -> IO a
-withLoadConfig go@GlobalOpts{..} inner = withRunnerGlobal go $ do
-    mstackYaml <- forM globalStackYaml resolveFile'
-    loadConfig globalConfigMonoid globalResolver globalCompiler mstackYaml $ \lc -> do
-      -- If we have been relaunched in a Docker container, perform in-container initialization
-      -- (switch UID, etc.).  We do this after first loading the configuration since it must
-      -- happen ASAP but needs a configuration.
-      forM_ globalDockerEntrypoint $ Docker.entrypoint lc
-      liftIO $ inner lc
-
-withRunnerGlobal :: GlobalOpts -> RIO Runner a -> IO a
-withRunnerGlobal GlobalOpts{..} inner = do
-    defColorWhen <- defaultColorWhen
-    let globalColorWhen =
-            fromFirst defColorWhen (configMonoidColorWhen globalConfigMonoid)
-    withRunner
-        globalLogLevel
-        globalTimeInLog
-        globalTerminal
-        globalColorWhen
-        globalStylesUpdate
-        globalTermWidth
-        (isJust globalReExecVersion)
-        (\runner -> runRIO runner inner)
-
--- | Unlock a lock file, if the value is Just
-munlockFile :: MonadIO m => Maybe FileLock -> m ()
-munlockFile Nothing = return ()
-munlockFile (Just lk) = liftIO $ unlockFile lk
 
 -- Plumbing for --test and --bench flags
 withBuildConfigDot
