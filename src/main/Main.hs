@@ -979,33 +979,22 @@ ideTargetsCmd stream go =
 
 -- | Pull the current Docker image.
 dockerPullCmd :: () -> GlobalOpts -> IO ()
-dockerPullCmd _ go@GlobalOpts{..} =
-  withLoadConfig go $ do
-    root <- view stackRootL
-    -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
-    withUserFileLock go root $ \_ -> Docker.preventInContainer Docker.pull
+dockerPullCmd () go = withLoadConfig go $ Docker.preventInContainer Docker.pull
 
 -- | Reset the Docker sandbox.
 dockerResetCmd :: Bool -> GlobalOpts -> IO ()
 dockerResetCmd keepHome go@GlobalOpts{..} =
   withLoadConfig go $ do
-    stackRoot <- view stackRootL
     mProjectRoot <- view $ to configProjectRoot
-    -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
-    withUserFileLock go stackRoot $ \_ ->
-      case mProjectRoot of
-        Nothing -> error "Cannot call docker reset without a project"
-        Just projectRoot ->
-          Docker.preventInContainer $ Docker.reset projectRoot keepHome
+    case mProjectRoot of
+      Nothing -> error "Cannot call docker reset without a project"
+      Just projectRoot ->
+        Docker.preventInContainer $ Docker.reset projectRoot keepHome
 
 -- | Cleanup Docker images and containers.
 dockerCleanupCmd :: Docker.CleanupOpts -> GlobalOpts -> IO ()
 dockerCleanupCmd cleanupOpts go@GlobalOpts{..} =
-  withLoadConfig go $ do
-    root <- view stackRootL
-    -- TODO: can we eliminate this lock if it doesn't touch ~/.stack/?
-    withUserFileLock go root $ \_ ->
-      Docker.preventInContainer $ Docker.cleanup cleanupOpts
+  withLoadConfig go $ Docker.preventInContainer $ Docker.cleanup cleanupOpts
 
 cfgSetCmd :: ConfigCmd.ConfigCmdSet -> GlobalOpts -> IO ()
 cfgSetCmd co go@GlobalOpts{..} =
