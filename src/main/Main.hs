@@ -708,18 +708,15 @@ uninstallCmd _ =
 -- | Unpack packages to the filesystem
 unpackCmd :: ([String], Maybe Text) -> RIO Runner ()
 unpackCmd (names, Nothing) = unpackCmd (names, Just ".")
-unpackCmd (names, Just dstPath) =
-  withConfigAndLock $ \_lk -> do -- FIXME does this need to deal with Docker?
-    go <- view globalOptsL
-    mSnapshotDef <- mapM (makeConcreteResolver >=> flip loadResolver Nothing) (globalResolver go)
-    dstPath' <- resolveDir' $ T.unpack dstPath
-    unpackPackages mSnapshotDef dstPath' names
+unpackCmd (names, Just dstPath) = withConfig $ do
+  go <- view globalOptsL
+  mSnapshotDef <- mapM (makeConcreteResolver >=> flip loadResolver Nothing) (globalResolver go)
+  dstPath' <- resolveDir' $ T.unpack dstPath
+  unpackPackages mSnapshotDef dstPath' names
 
 -- | Update the package index
 updateCmd :: () -> RIO Runner ()
-updateCmd () =
-  withConfigAndLock -- FIXME does this need to deal with Docker?
-  (\_lk -> void (updateHackageIndex Nothing))
+updateCmd () = withConfig $ void $ updateHackageIndex Nothing
 
 upgradeCmd :: UpgradeOpts -> RIO Runner ()
 upgradeCmd upgradeOpts' = do
