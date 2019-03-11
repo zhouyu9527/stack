@@ -685,7 +685,7 @@ buildCmd opts = do
   where
     inner setLocalFiles =
       local (over globalOptsL modifyGO) $
-      withBuildConfigAndLock NeedTargets opts $ \lk ->
+      withEnvConfigAndLock NeedTargets opts $ \lk ->
       Stack.Build.build setLocalFiles lk
     -- Read the build command from the CLI and enable it to run
     modifyGO go =
@@ -754,7 +754,7 @@ uploadCmd sdistOpts = do
             return $ if r then (x:as, bs) else (as, x:bs)
     (files, nonFiles) <- liftIO $ partitionM D.doesFileExist (sdoptsDirsToWorkWith sdistOpts)
     (dirs, invalid) <- liftIO $ partitionM D.doesDirectoryExist nonFiles
-    withConfig $ withActualBuildConfig $ withDefaultBuildConfigAndLock $ \_ -> do
+    withConfig $ withActualBuildConfig $ withDefaultEnvConfigAndLock $ \_ -> do
         unless (null invalid) $ do
             let invalidList = bulletedList $ map (PP.style File . fromString) invalid
             prettyErrorL
@@ -807,7 +807,7 @@ uploadCmd sdistOpts = do
 
 sdistCmd :: SDistOpts -> RIO Runner ()
 sdistCmd sdistOpts =
-    withConfig $ withActualBuildConfig $ withDefaultBuildConfig $ do -- No locking needed.
+    withConfig $ withActualBuildConfig $ withDefaultEnvConfig $ do -- No locking needed.
         -- If no directories are specified, build all sdist tarballs.
         dirs' <- if null (sdoptsDirsToWorkWith sdistOpts)
             then do
@@ -851,7 +851,7 @@ execCmd ExecOpts {..} =
               projectRoot
               -- Unlock before transferring control away, whether using docker or not:
               (Just $ munlockFile lk)
-              (withDefaultBuildConfigAndLock $ \buildLock -> do -- FIXME this has to be broken, right? we already did the loading!
+              (withDefaultEnvConfigAndLock $ \buildLock -> do -- FIXME this has to be broken, right? we already did the loading!
                   config <- view configL
                   menv <- liftIO $ configProcessContextSettings config plainEnvSettings
                   withProcessContext menv $ do
@@ -869,7 +869,7 @@ execCmd ExecOpts {..} =
                 boptsCLI = defaultBuildOptsCLI
                            { boptsCLITargets = map T.pack targets
                            }
-            withConfig $ withActualBuildConfig $ withBuildConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
+            withConfig $ withActualBuildConfig $ withEnvConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
               unless (null targets) $ Stack.Build.build Nothing lk
 
               config <- view configL
@@ -956,7 +956,7 @@ ghciCmd ghciOpts =
           }
   in withConfig $
      withActualBuildConfig $
-     withBuildConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
+     withEnvConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
     munlockFile lk -- Don't hold the lock while in the GHCI.
     bopts <- view buildOptsL
     -- override env so running of tests and benchmarks is disabled
@@ -1003,7 +1003,7 @@ cfgSetCmd = withGlobalProject . withConfig . cfgCmdSet
 imgDockerCmd :: (Bool, [Text]) -> RIO Runner ()
 imgDockerCmd (rebuild,images) = withConfig $ withActualBuildConfig $ do
     mProjectRoot <- view $ configL.to configProjectRoot
-    withBuildConfigExt
+    withEnvConfigExt
         WithDocker
         NeedTargets
         defaultBuildOptsCLI
@@ -1043,21 +1043,21 @@ solverCmd :: Bool -- ^ modify stack.yaml automatically?
 solverCmd fixStackYaml =
   withConfig $
   withActualBuildConfig $
-  withDefaultBuildConfigAndLock (\_ -> solveExtraDeps fixStackYaml)
+  withDefaultEnvConfigAndLock (\_ -> solveExtraDeps fixStackYaml)
 
 -- | Visualize dependencies
 dotCmd :: DotOpts -> RIO Runner ()
 dotCmd dotOpts =
   withConfig $
   withActualBuildConfig $
-  withBuildConfigDot dotOpts $ dot dotOpts
+  withEnvConfigDot dotOpts $ dot dotOpts
 
 -- | Query build information
 queryCmd :: [String] -> RIO Runner ()
 queryCmd selectors =
   withConfig $
   withActualBuildConfig $
-  withDefaultBuildConfig $
+  withDefaultEnvConfig $
   queryBuildInfo $ map T.pack selectors
 
 -- | Generate a combined HPC report
@@ -1067,11 +1067,11 @@ hpcReportCmd hropts = do
         boptsCLI = defaultBuildOptsCLI
           { boptsCLITargets = if hroptsAll hropts then [] else targetNames }
     withConfig $ withActualBuildConfig $
-      withBuildConfig AllowNoTargets boptsCLI $
+      withEnvConfig AllowNoTargets boptsCLI $
       generateHpcReportForTargets hropts tixFiles targetNames
 
 freezeCmd :: FreezeOpts -> RIO Runner ()
-freezeCmd = withConfig . withActualBuildConfig . withDefaultBuildConfig . freeze
+freezeCmd = withConfig . withActualBuildConfig . withDefaultEnvConfig . freeze
 
 data MainException = InvalidReExecVersion String String
                    | UpgradeCabalUnusable

@@ -280,7 +280,7 @@ lsCmd :: LsCmdOpts -> RIO Runner ()
 lsCmd lsOpts =
     case lsView lsOpts of
         LsSnapshot SnapshotOpts {..} ->
-            withConfig $ withActualBuildConfig $ withDefaultBuildConfig $
+            withConfig $ withActualBuildConfig $ withDefaultEnvConfig $
             case soptViewType of
                 Local -> handleLocal lsOpts
                 Remote -> handleRemote lsOpts
@@ -294,7 +294,7 @@ listDependenciesCmd deprecated opts = do
         deprecated
         (logError
              "DEPRECATED: Use ls dependencies instead. Will be removed in next major version.")
-    withConfig $ withActualBuildConfig $ withBuildConfigDot (listDepsDotOpts opts) $ listDependencies opts
+    withConfig $ withActualBuildConfig $ withEnvConfigDot (listDepsDotOpts opts) $ listDependencies opts
 
 lsViewLocalCmd :: OA.Mod OA.CommandFields LsView
 lsViewLocalCmd =

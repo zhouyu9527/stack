@@ -27,7 +27,7 @@ import           RIO.Process
 -- | Hoogle command.
 hoogleCmd :: ([String],Bool,Bool,Bool) -> RIO Runner ()
 hoogleCmd (args,setup,rebuild,startServer) =
-  local (over globalOptsL modifyGO) $ withConfig $ withActualBuildConfig $ withDefaultBuildConfig $ do
+  local (over globalOptsL modifyGO) $ withConfig $ withActualBuildConfig $ withDefaultEnvConfig $ do
     hooglePath <- ensureHoogleInPath
     generateDbIfNeeded hooglePath
     runHoogle hooglePath args'
@@ -65,7 +65,7 @@ hoogleCmd (args,setup,rebuild,startServer) =
     buildHaddocks :: RIO EnvConfig ()
     buildHaddocks = do
         bconfig <- view buildConfigL -- FIXME this whole function feels wrong, why restarting EnvConfig?
-        catch (runRIO bconfig $ withDefaultBuildConfigAndLock $ Stack.Build.build Nothing)
+        catch (runRIO bconfig $ withDefaultEnvConfigAndLock $ Stack.Build.build Nothing)
               (\(_ :: ExitCode) -> return ())
     hooglePackageName = mkPackageName "hoogle"
     hoogleMinVersion = mkVersion [5, 0]
@@ -108,7 +108,7 @@ hoogleCmd (args,setup,rebuild,startServer) =
                     hooglePackageIdentifier
                 }
         bconfig <- view buildConfigL
-        runRIO bconfig $ withBuildConfigAndLock -- FIXME why is this rerun necessary?
+        runRIO bconfig $ withEnvConfigAndLock -- FIXME why is this rerun necessary?
           NeedTargets
           boptsCLI
           (Stack.Build.build Nothing)

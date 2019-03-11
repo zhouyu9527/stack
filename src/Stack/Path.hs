@@ -58,7 +58,7 @@ path withoutHaddocks withHaddocks keys =
              liftIO $ forM_ extractors $ \(key, extractPath) -> do
                let prefix = if single then "" else key <> ": "
                T.putStrLn $ prefix <> extractPath pathInfo
-       withConfig $ withActualBuildConfig $ withDefaultBuildConfig $ do
+       withConfig $ withActualBuildConfig $ withDefaultEnvConfig $ do
          printKeys withHaddocks with singlePath
          printKeys withoutHaddocks without singlePath
 

@@ -18,12 +18,12 @@ module Stack.Runners
     , withActualBuildConfig
     , withActualBuildConfigAndLock
       -- * EnvConfig
-    , withBuildConfig
-    , withBuildConfigAndLock
-    , withDefaultBuildConfig
-    , withDefaultBuildConfigAndLock
-    , withBuildConfigExt
-    , withBuildConfigDot
+    , withEnvConfig
+    , withEnvConfigAndLock
+    , withDefaultEnvConfig
+    , withDefaultEnvConfigAndLock
+    , withEnvConfigExt
+    , withEnvConfigDot
     ) where
 
 import           Stack.Prelude
@@ -157,39 +157,39 @@ withActualBuildConfigAndLock inner = do
   bconfig <- loadBuildConfig
   withUserFileLock root $ runRIO bconfig . inner
 
-withBuildConfig
+withEnvConfig
     :: NeedTargets
     -> BuildOptsCLI
     -> RIO EnvConfig a
     -> RIO BuildConfig a
-withBuildConfig needTargets boptsCLI inner =
-    withBuildConfigAndLock needTargets boptsCLI (\lk -> do munlockFile lk
-                                                           inner)
+withEnvConfig needTargets boptsCLI inner =
+    withEnvConfigAndLock needTargets boptsCLI (\lk -> do munlockFile lk
+                                                         inner)
 
-withBuildConfigAndLock
+withEnvConfigAndLock
     :: NeedTargets
     -> BuildOptsCLI
     -> (Maybe FileLock -> RIO EnvConfig a)
     -> RIO BuildConfig a
-withBuildConfigAndLock needTargets boptsCLI inner =
-    withBuildConfigExt WithDocker needTargets boptsCLI Nothing inner Nothing
+withEnvConfigAndLock needTargets boptsCLI inner =
+    withEnvConfigExt WithDocker needTargets boptsCLI Nothing inner Nothing
 
 -- For now the non-locking version just unlocks immediately.
 -- That is, there's still a serialization point.
-withDefaultBuildConfig
+withDefaultEnvConfig
     :: RIO EnvConfig ()
     -> RIO BuildConfig ()
-withDefaultBuildConfig inner =
-    withBuildConfigAndLock AllowNoTargets defaultBuildOptsCLI (\lk -> do munlockFile lk
-                                                                         inner)
+withDefaultEnvConfig inner =
+    withEnvConfigAndLock AllowNoTargets defaultBuildOptsCLI (\lk -> do munlockFile lk
+                                                                       inner)
 
-withDefaultBuildConfigAndLock
+withDefaultEnvConfigAndLock
     :: (Maybe FileLock -> RIO EnvConfig ())
     -> RIO BuildConfig ()
-withDefaultBuildConfigAndLock inner =
-    withBuildConfigExt WithDocker AllowNoTargets defaultBuildOptsCLI Nothing inner Nothing
+withDefaultEnvConfigAndLock inner =
+    withEnvConfigExt WithDocker AllowNoTargets defaultBuildOptsCLI Nothing inner Nothing
 
-withBuildConfigExt
+withEnvConfigExt
     :: WithDocker
     -> NeedTargets
     -> BuildOptsCLI
@@ -207,7 +207,7 @@ withBuildConfigExt
     -- available in this action, since that would require build tools to be
     -- installed on the host OS.
     -> RIO BuildConfig a
-withBuildConfigExt skipDocker needTargets boptsCLI mbefore inner mafter = do
+withEnvConfigExt skipDocker needTargets boptsCLI mbefore inner mafter = do
   root <- view stackRootL
   withUserFileLock root $ \lk0 -> do
     -- A local bit of state for communication between callbacks:
@@ -247,12 +247,12 @@ withBuildConfigExt skipDocker needTargets boptsCLI mbefore inner mafter = do
                                munlockFile lk')
 
 -- Plumbing for --test and --bench flags
-withBuildConfigDot
+withEnvConfigDot
     :: DotOpts
     -> RIO EnvConfig ()
     -> RIO BuildConfig ()
-withBuildConfigDot opts f =
-    local (over globalOptsL modifyGO) $ withBuildConfig NeedTargets boptsCLI f
+withEnvConfigDot opts f =
+    local (over globalOptsL modifyGO) $ withEnvConfig NeedTargets boptsCLI f
   where
     boptsCLI = defaultBuildOptsCLI
         { boptsCLITargets = dotTargets opts
