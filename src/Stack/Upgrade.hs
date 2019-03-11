@@ -236,7 +236,7 @@ sourceUpgrade gConfigMonoid builtHash (SourceOpts gitRepo) =
           , globalStackYaml = SYLOverride $ dir </> stackDotYaml
           }
     forM_ mdir $ \dir -> local (over globalOptsL (modifyGO dir)) $
-      withActualBuildConfig $ do
+      withBuildConfig $ do
         let boptsCLI = defaultBuildOptsCLI
                 { boptsCLITargets = ["stack"]
                 }

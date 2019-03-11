@@ -629,7 +629,7 @@ pathCmd = Stack.Path.path goWithout goWith
 setupCmd :: SetupCmdOpts -> RIO Runner ()
 setupCmd sco@SetupCmdOpts{..} =
   withConfig $
-  withActualBuildConfigAndLock $ \lk -> do
+  withBuildConfigAndLock $ \lk -> do
 
     -- FIXME time to just rip off the bandaid and kill UpgradeCabal
     nixEnabled <- view $ configL.to (nixEnable . configNix)
@@ -668,7 +668,7 @@ setupCmd sco@SetupCmdOpts{..} =
 -- the project. This is a change as of #4480. For previous behavior,
 -- see issue #2010.
 cleanCmd :: CleanOpts -> RIO Runner ()
-cleanCmd opts = withConfig $ withActualBuildConfigAndLock $ \_lock -> clean opts
+cleanCmd opts = withConfig $ withBuildConfigAndLock $ \_lock -> clean opts
 
 -- | Helper for build and install commands
 buildCmd :: BuildOptsCLI -> RIO Runner ()
@@ -678,7 +678,7 @@ buildCmd opts = do
     logError "Instead, please use --library-profiling and --executable-profiling"
     logError "See: https://github.com/commercialhaskell/stack/issues/1015"
     liftIO exitFailure
-  withConfig $ withActualBuildConfig $ case boptsCLIFileWatch opts of
+  withConfig $ withBuildConfig $ case boptsCLIFileWatch opts of
     FileWatchPoll -> withRunInIO $ \run -> fileWatchPoll stderr (run . inner . Just)
     FileWatch -> withRunInIO $ \run -> fileWatch stderr (run . inner . Just)
     NoFileWatch -> inner Nothing
@@ -754,7 +754,7 @@ uploadCmd sdistOpts = do
             return $ if r then (x:as, bs) else (as, x:bs)
     (files, nonFiles) <- liftIO $ partitionM D.doesFileExist (sdoptsDirsToWorkWith sdistOpts)
     (dirs, invalid) <- liftIO $ partitionM D.doesDirectoryExist nonFiles
-    withConfig $ withActualBuildConfig $ withDefaultEnvConfigAndLock $ \_ -> do
+    withConfig $ withBuildConfig $ withDefaultEnvConfigAndLock $ \_ -> do
         unless (null invalid) $ do
             let invalidList = bulletedList $ map (PP.style File . fromString) invalid
             prettyErrorL
@@ -807,7 +807,7 @@ uploadCmd sdistOpts = do
 
 sdistCmd :: SDistOpts -> RIO Runner ()
 sdistCmd sdistOpts =
-    withConfig $ withActualBuildConfig $ withDefaultEnvConfig $ do -- No locking needed.
+    withConfig $ withBuildConfig $ withDefaultEnvConfig $ do -- No locking needed.
         -- If no directories are specified, build all sdist tarballs.
         dirs' <- if null (sdoptsDirsToWorkWith sdistOpts)
             then do
@@ -844,7 +844,7 @@ sdistCmd sdistOpts =
 execCmd :: ExecOpts -> RIO Runner ()
 execCmd ExecOpts {..} =
     case eoExtra of
-        ExecOptsPlain -> withConfig $ withActualBuildConfigAndLock $ \lk -> do
+        ExecOptsPlain -> withConfig $ withBuildConfigAndLock $ \lk -> do
           compilerVersion <- view wantedCompilerVersionL
           projectRoot <- view projectRootL
           Docker.reexecWithOptionalContainer
@@ -869,7 +869,7 @@ execCmd ExecOpts {..} =
                 boptsCLI = defaultBuildOptsCLI
                            { boptsCLITargets = map T.pack targets
                            }
-            withConfig $ withActualBuildConfig $ withEnvConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
+            withConfig $ withBuildConfig $ withEnvConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
               unless (null targets) $ Stack.Build.build Nothing lk
 
               config <- view configL
@@ -955,7 +955,7 @@ ghciCmd ghciOpts =
           , boptsCLIGhcOptions = ghciGhcOptions ghciOpts
           }
   in withConfig $
-     withActualBuildConfig $
+     withBuildConfig $
      withEnvConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
     munlockFile lk -- Don't hold the lock while in the GHCI.
     bopts <- view buildOptsL
@@ -970,12 +970,12 @@ ghciCmd ghciOpts =
 -- | List packages in the project.
 idePackagesCmd :: (IDE.OutputStream, IDE.ListPackagesCmd) -> RIO Runner ()
 idePackagesCmd (stream, cmd) =
-    withConfig $ withActualBuildConfig $ IDE.listPackages stream cmd
+    withConfig $ withBuildConfig $ IDE.listPackages stream cmd
 
 -- | List targets in the project.
 ideTargetsCmd :: IDE.OutputStream -> RIO Runner ()
 ideTargetsCmd stream =
-    withConfig $ withActualBuildConfig $ IDE.listTargets stream
+    withConfig $ withBuildConfig $ IDE.listTargets stream
 
 -- | Pull the current Docker image.
 dockerPullCmd :: () -> RIO Runner ()
@@ -1001,7 +1001,7 @@ cfgSetCmd :: ConfigCmd.ConfigCmdSet -> RIO Runner ()
 cfgSetCmd = withGlobalProject . withConfig . cfgCmdSet
 
 imgDockerCmd :: (Bool, [Text]) -> RIO Runner ()
-imgDockerCmd (rebuild,images) = withConfig $ withActualBuildConfig $ do
+imgDockerCmd (rebuild,images) = withConfig $ withBuildConfig $ do
     mProjectRoot <- view $ configL.to configProjectRoot
     withEnvConfigExt
         WithDocker
@@ -1042,21 +1042,21 @@ solverCmd :: Bool -- ^ modify stack.yaml automatically?
           -> RIO Runner ()
 solverCmd fixStackYaml =
   withConfig $
-  withActualBuildConfig $
+  withBuildConfig $
   withDefaultEnvConfigAndLock (\_ -> solveExtraDeps fixStackYaml)
 
 -- | Visualize dependencies
 dotCmd :: DotOpts -> RIO Runner ()
 dotCmd dotOpts =
   withConfig $
-  withActualBuildConfig $
+  withBuildConfig $
   withEnvConfigDot dotOpts $ dot dotOpts
 
 -- | Query build information
 queryCmd :: [String] -> RIO Runner ()
 queryCmd selectors =
   withConfig $
-  withActualBuildConfig $
+  withBuildConfig $
   withDefaultEnvConfig $
   queryBuildInfo $ map T.pack selectors
 
@@ -1066,12 +1066,12 @@ hpcReportCmd hropts = do
     let (tixFiles, targetNames) = partition (".tix" `T.isSuffixOf`) (hroptsInputs hropts)
         boptsCLI = defaultBuildOptsCLI
           { boptsCLITargets = if hroptsAll hropts then [] else targetNames }
-    withConfig $ withActualBuildConfig $
+    withConfig $ withBuildConfig $
       withEnvConfig AllowNoTargets boptsCLI $
       generateHpcReportForTargets hropts tixFiles targetNames
 
 freezeCmd :: FreezeOpts -> RIO Runner ()
-freezeCmd = withConfig . withActualBuildConfig . withDefaultEnvConfig . freeze
+freezeCmd = withConfig . withBuildConfig . withDefaultEnvConfig . freeze
 
 data MainException = InvalidReExecVersion String String
                    | UpgradeCabalUnusable

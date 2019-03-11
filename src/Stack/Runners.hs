@@ -15,8 +15,8 @@ module Stack.Runners
       -- * Config
     , withConfig
       -- * BuildConfig
-    , withActualBuildConfig
-    , withActualBuildConfigAndLock
+    , withBuildConfig
+    , withBuildConfigAndLock
       -- * EnvConfig
     , withEnvConfig
     , withEnvConfigAndLock
@@ -144,15 +144,15 @@ withGlobalProject inner = do
 withConfig :: RIO Config a -> RIO Runner a
 withConfig = withConfigInternal Docker.entrypoint
 
-withActualBuildConfig :: RIO BuildConfig a -> RIO Config a
-withActualBuildConfig inner = do
+withBuildConfig :: RIO BuildConfig a -> RIO Config a
+withBuildConfig inner = do
   bconfig <- loadBuildConfig
   runRIO bconfig inner
 
-withActualBuildConfigAndLock
+withBuildConfigAndLock
   :: (Maybe FileLock -> RIO BuildConfig a)
   -> RIO Config a
-withActualBuildConfigAndLock inner = do
+withBuildConfigAndLock inner = do
   root <- view stackRootL
   bconfig <- loadBuildConfig
   withUserFileLock root $ runRIO bconfig . inner
