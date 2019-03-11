@@ -10,8 +10,9 @@ module Stack.Runners
       munlockFile
       -- * Runner
     , withRunner
+      -- * Modify Runner
+    , withGlobalProject
       -- * Config
-    , withGlobalConfig
     , withConfig
       -- * BuildConfig
     , withActualBuildConfig
@@ -129,12 +130,16 @@ withRunner go inner = do
           | w > maxTerminalWidth = maxTerminalWidth
           | otherwise = w
 
--- | Loads global config, ignoring any configuration which would be
--- loaded due to $PWD.
-withGlobalConfig :: RIO Config a -> RIO Runner a
-withGlobalConfig inner = do
-  let modifyGO go = go { globalStackYaml = SYLGlobal }
-  local (over globalOptsL modifyGO) $ withConfig inner
+-- | Modify the 'Runner' so that we use the global project. If some other
+-- setting was provided, throw an exception.
+withGlobalProject :: RIO Runner a -> RIO Runner a
+withGlobalProject inner = do
+  go <- view globalOptsL
+  case globalStackYaml go of
+    SYLDefault -> do
+      let go' = go { globalStackYaml = SYLGlobal }
+      local (set globalOptsL go') inner
+    _ -> throwString "This command must use the global stack.yaml, please rerun without setting the stack.yaml location"
 
 withConfig :: RIO Config a -> RIO Runner a
 withConfig = withConfigInternal Docker.entrypoint

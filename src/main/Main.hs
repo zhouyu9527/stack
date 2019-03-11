@@ -726,7 +726,8 @@ upgradeCmd upgradeOpts' = do
       logError "You cannot use the --resolver option with the upgrade command"
       liftIO exitFailure
     Nothing ->
-      withGlobalConfig $
+      withGlobalProject $
+      withConfig $
       upgrade
         (globalConfigMonoid go)
 #ifdef USE_GIT_INFO
@@ -997,7 +998,7 @@ dockerCleanupCmd cleanupOpts =
   Docker.preventInContainer $ Docker.cleanup cleanupOpts
 
 cfgSetCmd :: ConfigCmd.ConfigCmdSet -> RIO Runner ()
-cfgSetCmd = withGlobalConfig . cfgCmdSet
+cfgSetCmd = withGlobalProject . withConfig . cfgCmdSet
 
 imgDockerCmd :: (Bool, [Text]) -> RIO Runner ()
 imgDockerCmd (rebuild,images) = withConfig $ withActualBuildConfig $ do
@@ -1017,12 +1018,15 @@ initCmd :: InitOpts -> RIO Runner ()
 initCmd initOpts = do
     pwd <- getCurrentDir
     go <- view globalOptsL
-    withGlobalConfig (initProject IsInitCmd pwd initOpts (globalResolver go))
+    withGlobalProject $
+      withConfig $
+      initProject IsInitCmd pwd initOpts $
+      globalResolver go
 
 -- | Create a project directory structure and initialize the stack config.
 newCmd :: (NewOpts,InitOpts) -> RIO Runner ()
 newCmd (newOpts,initOpts) =
-    withGlobalConfig $ do
+    withGlobalProject $ withConfig $ do
         dir <- new newOpts (forceOverwrite initOpts)
         exists <- doesFileExist $ dir </> stackDotYaml
         go <- view globalOptsL
