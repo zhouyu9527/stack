@@ -83,7 +83,7 @@ import              Stack.Build (build)
 import              Stack.Build.Haddock (shouldHaddockDeps)
 import              Stack.Build.Source (loadSourceMap)
 import              Stack.Build.Target (NeedTargets(..), parseTargets)
-import              Stack.Config (loadConfig, loadBuildConfig)
+import              Stack.Config (loadBuildConfig)
 import              Stack.Constants
 import              Stack.Constants.Config (distRelativeDir)
 import              Stack.GhcPkg (createDatabase, getCabalPkgVer, getGlobalDB, mkGhcPackagePath, ghcPkgPathEnvVar)
@@ -1317,7 +1317,7 @@ ensureGhcjsBooted cv shouldBoot bootOpts = do
                 bootGhcjs ghcjsVersion actualStackYaml destDir bootOpts
         Left ece -> throwIO ece
 
-bootGhcjs :: (HasRunner env, HasProcessContext env)
+bootGhcjs :: HasConfig env
           => Version -> Path Abs File -> Path Abs Dir -> [String] -> RIO env ()
 bootGhcjs ghcjsVersion stackYaml destDir bootOpts =
   loadGhcjsEnvConfig stackYaml (destDir </> relDirBin) $ \envConfig -> do
@@ -1401,7 +1401,7 @@ bootGhcjs ghcjsVersion stackYaml destDir bootOpts =
     logStickyDone "GHCJS booted."
 
 loadGhcjsEnvConfig
-  :: HasRunner env
+  :: HasConfig env
   => Path Abs File
   -> Path b t
   -> (EnvConfig -> RIO BuildConfig a)
@@ -1418,8 +1418,8 @@ loadGhcjsEnvConfig stackYaml binPath inner = do
           }
     -- We're intentionally throwing away a previous BuildConfig to set
     -- up a fresh one for building GHCJS itself
-    runner <- view runnerL
-    runRIO (over globalOptsL modifyGO runner) $ loadConfig $ do
+    config <- view configL
+    runRIO (over globalOptsL modifyGO config) $ do
         bconfig <- loadBuildConfig
         runRIO bconfig $ do
           envConfig <- setupEnv AllowNoTargets defaultBuildOptsCLI Nothing

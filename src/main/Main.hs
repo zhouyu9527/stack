@@ -628,7 +628,7 @@ pathCmd = Stack.Path.path goWithout goWith
 
 setupCmd :: SetupCmdOpts -> RIO Runner ()
 setupCmd sco@SetupCmdOpts{..} =
-  withLoadConfig $
+  withConfig $
   withActualBuildConfigAndLock $ \lk -> do
 
     -- FIXME time to just rip off the bandaid and kill UpgradeCabal
@@ -668,7 +668,7 @@ setupCmd sco@SetupCmdOpts{..} =
 -- the project. This is a change as of #4480. For previous behavior,
 -- see issue #2010.
 cleanCmd :: CleanOpts -> RIO Runner ()
-cleanCmd opts = withLoadConfig $ withActualBuildConfigAndLock $ \_lock -> clean opts
+cleanCmd opts = withConfig $ withActualBuildConfigAndLock $ \_lock -> clean opts
 
 -- | Helper for build and install commands
 buildCmd :: BuildOptsCLI -> RIO Runner ()
@@ -678,7 +678,7 @@ buildCmd opts = do
     logError "Instead, please use --library-profiling and --executable-profiling"
     logError "See: https://github.com/commercialhaskell/stack/issues/1015"
     liftIO exitFailure
-  withLoadConfig $ withActualBuildConfig $ case boptsCLIFileWatch opts of
+  withConfig $ withActualBuildConfig $ case boptsCLIFileWatch opts of
     FileWatchPoll -> withRunInIO $ \run -> fileWatchPoll stderr (run . inner . Just)
     FileWatch -> withRunInIO $ \run -> fileWatch stderr (run . inner . Just)
     NoFileWatch -> inner Nothing
@@ -709,7 +709,7 @@ uninstallCmd _ =
 unpackCmd :: ([String], Maybe Text) -> RIO Runner ()
 unpackCmd (names, Nothing) = unpackCmd (names, Just ".")
 unpackCmd (names, Just dstPath) =
-  withLoadConfigAndLock $ \_lk -> do -- FIXME does this need to deal with Docker?
+  withConfigAndLock $ \_lk -> do -- FIXME does this need to deal with Docker?
     go <- view globalOptsL
     mSnapshotDef <- mapM (makeConcreteResolver >=> flip loadResolver Nothing) (globalResolver go)
     dstPath' <- resolveDir' $ T.unpack dstPath
@@ -718,7 +718,7 @@ unpackCmd (names, Just dstPath) =
 -- | Update the package index
 updateCmd :: () -> RIO Runner ()
 updateCmd () =
-  withLoadConfigAndLock -- FIXME does this need to deal with Docker?
+  withConfigAndLock -- FIXME does this need to deal with Docker?
   (\_lk -> void (updateHackageIndex Nothing))
 
 upgradeCmd :: UpgradeOpts -> RIO Runner ()
@@ -729,7 +729,7 @@ upgradeCmd upgradeOpts' = do
       logError "You cannot use the --resolver option with the upgrade command"
       liftIO exitFailure
     Nothing ->
-      withGlobalConfigAndLock $
+      withGlobalConfig $
       upgrade
         (globalConfigMonoid go)
 #ifdef USE_GIT_INFO
@@ -756,7 +756,7 @@ uploadCmd sdistOpts = do
             return $ if r then (x:as, bs) else (as, x:bs)
     (files, nonFiles) <- liftIO $ partitionM D.doesFileExist (sdoptsDirsToWorkWith sdistOpts)
     (dirs, invalid) <- liftIO $ partitionM D.doesDirectoryExist nonFiles
-    withLoadConfig $ withActualBuildConfig $ withDefaultBuildConfigAndLock $ \_ -> do
+    withConfig $ withActualBuildConfig $ withDefaultBuildConfigAndLock $ \_ -> do
         unless (null invalid) $ do
             let invalidList = bulletedList $ map (PP.style File . fromString) invalid
             prettyErrorL
@@ -809,7 +809,7 @@ uploadCmd sdistOpts = do
 
 sdistCmd :: SDistOpts -> RIO Runner ()
 sdistCmd sdistOpts =
-    withLoadConfig $ withActualBuildConfig $ withDefaultBuildConfig $ do -- No locking needed.
+    withConfig $ withActualBuildConfig $ withDefaultBuildConfig $ do -- No locking needed.
         -- If no directories are specified, build all sdist tarballs.
         dirs' <- if null (sdoptsDirsToWorkWith sdistOpts)
             then do
@@ -846,7 +846,7 @@ sdistCmd sdistOpts =
 execCmd :: ExecOpts -> RIO Runner ()
 execCmd ExecOpts {..} =
     case eoExtra of
-        ExecOptsPlain -> withLoadConfig $ withActualBuildConfigAndLock $ \lk -> do
+        ExecOptsPlain -> withConfig $ withActualBuildConfigAndLock $ \lk -> do
           compilerVersion <- view wantedCompilerVersionL
           projectRoot <- view projectRootL
           Docker.reexecWithOptionalContainer
@@ -871,7 +871,7 @@ execCmd ExecOpts {..} =
                 boptsCLI = defaultBuildOptsCLI
                            { boptsCLITargets = map T.pack targets
                            }
-            withLoadConfig $ withActualBuildConfig $ withBuildConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
+            withConfig $ withActualBuildConfig $ withBuildConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
               unless (null targets) $ Stack.Build.build Nothing lk
 
               config <- view configL
@@ -956,7 +956,7 @@ ghciCmd ghciOpts =
           , boptsCLIFlags = ghciFlags ghciOpts
           , boptsCLIGhcOptions = ghciGhcOptions ghciOpts
           }
-  in withLoadConfig $
+  in withConfig $
      withActualBuildConfig $
      withBuildConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
     munlockFile lk -- Don't hold the lock while in the GHCI.
@@ -972,21 +972,21 @@ ghciCmd ghciOpts =
 -- | List packages in the project.
 idePackagesCmd :: (IDE.OutputStream, IDE.ListPackagesCmd) -> RIO Runner ()
 idePackagesCmd (stream, cmd) =
-    withLoadConfig $ withActualBuildConfig $ IDE.listPackages stream cmd
+    withConfig $ withActualBuildConfig $ IDE.listPackages stream cmd
 
 -- | List targets in the project.
 ideTargetsCmd :: IDE.OutputStream -> RIO Runner ()
 ideTargetsCmd stream =
-    withLoadConfig $ withActualBuildConfig $ IDE.listTargets stream
+    withConfig $ withActualBuildConfig $ IDE.listTargets stream
 
 -- | Pull the current Docker image.
 dockerPullCmd :: () -> RIO Runner ()
-dockerPullCmd () = withLoadConfig $ Docker.preventInContainer Docker.pull
+dockerPullCmd () = withConfig $ Docker.preventInContainer Docker.pull
 
 -- | Reset the Docker sandbox.
 dockerResetCmd :: Bool -> RIO Runner ()
 dockerResetCmd keepHome = do
-  withLoadConfig $ do
+  withConfig $ do
     mProjectRoot <- view $ to configProjectRoot
     case mProjectRoot of
       Nothing -> error "Cannot call docker reset without a project"
@@ -996,14 +996,14 @@ dockerResetCmd keepHome = do
 -- | Cleanup Docker images and containers.
 dockerCleanupCmd :: Docker.CleanupOpts -> RIO Runner ()
 dockerCleanupCmd cleanupOpts =
-  withLoadConfig $
+  withConfig $
   Docker.preventInContainer $ Docker.cleanup cleanupOpts
 
 cfgSetCmd :: ConfigCmd.ConfigCmdSet -> RIO Runner ()
-cfgSetCmd = withGlobalConfigAndLock . cfgCmdSet
+cfgSetCmd = withGlobalConfig . cfgCmdSet
 
 imgDockerCmd :: (Bool, [Text]) -> RIO Runner ()
-imgDockerCmd (rebuild,images) = withLoadConfig $ withActualBuildConfig $ do
+imgDockerCmd (rebuild,images) = withConfig $ withActualBuildConfig $ do
     mProjectRoot <- view $ configL.to configProjectRoot
     withBuildConfigExt
         WithDocker
@@ -1020,12 +1020,12 @@ initCmd :: InitOpts -> RIO Runner ()
 initCmd initOpts = do
     pwd <- getCurrentDir
     go <- view globalOptsL
-    withGlobalConfigAndLock (initProject IsInitCmd pwd initOpts (globalResolver go))
+    withGlobalConfig (initProject IsInitCmd pwd initOpts (globalResolver go))
 
 -- | Create a project directory structure and initialize the stack config.
 newCmd :: (NewOpts,InitOpts) -> RIO Runner ()
 newCmd (newOpts,initOpts) =
-    withGlobalConfigAndLock $ do
+    withGlobalConfig $ do
         dir <- new newOpts (forceOverwrite initOpts)
         exists <- doesFileExist $ dir </> stackDotYaml
         go <- view globalOptsL
@@ -1040,21 +1040,21 @@ templatesCmd () = templatesHelp
 solverCmd :: Bool -- ^ modify stack.yaml automatically?
           -> RIO Runner ()
 solverCmd fixStackYaml =
-  withLoadConfig $
+  withConfig $
   withActualBuildConfig $
   withDefaultBuildConfigAndLock (\_ -> solveExtraDeps fixStackYaml)
 
 -- | Visualize dependencies
 dotCmd :: DotOpts -> RIO Runner ()
 dotCmd dotOpts =
-  withLoadConfig $
+  withConfig $
   withActualBuildConfig $
   withBuildConfigDot dotOpts $ dot dotOpts
 
 -- | Query build information
 queryCmd :: [String] -> RIO Runner ()
 queryCmd selectors =
-  withLoadConfig $
+  withConfig $
   withActualBuildConfig $
   withDefaultBuildConfig $
   queryBuildInfo $ map T.pack selectors
@@ -1065,12 +1065,12 @@ hpcReportCmd hropts = do
     let (tixFiles, targetNames) = partition (".tix" `T.isSuffixOf`) (hroptsInputs hropts)
         boptsCLI = defaultBuildOptsCLI
           { boptsCLITargets = if hroptsAll hropts then [] else targetNames }
-    withLoadConfig $ withActualBuildConfig $
+    withConfig $ withActualBuildConfig $
       withBuildConfig AllowNoTargets boptsCLI $
       generateHpcReportForTargets hropts tixFiles targetNames
 
 freezeCmd :: FreezeOpts -> RIO Runner ()
-freezeCmd = withLoadConfig . withActualBuildConfig . withDefaultBuildConfig . freeze
+freezeCmd = withConfig . withActualBuildConfig . withDefaultBuildConfig . freeze
 
 data MainException = InvalidReExecVersion String String
                    | UpgradeCabalUnusable

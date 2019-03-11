@@ -18,7 +18,7 @@ import           Data.Version (showVersion)
 import           Lens.Micro (set)
 import           Path.IO
 import qualified Paths_stack as Meta
-import           Stack.Config (getInNixShell, getInContainer)
+import           Stack.Config (getInNixShell)
 import           Stack.Config.Nix (nixCompiler)
 import           Stack.Constants (platformVariantEnvVar,inNixShellEnvVar,inContainerEnvVar)
 import           Stack.Types.Config

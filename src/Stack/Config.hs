@@ -21,14 +21,13 @@
 -- probably default to behaving like cabal, possibly with spitting out
 -- a warning that "you should run `stk init` to make things better".
 module Stack.Config
-  (loadConfig
+  (withConfigInternal
   ,loadConfigYaml
   ,packagesParser
   ,getImplicitGlobalProjectDir
   ,getSnapshots
   ,makeConcreteResolver
   ,checkOwnership
-  ,getInContainer
   ,getInNixShell
   ,defaultConfigYaml
   ,getProjectConfig
@@ -397,10 +396,13 @@ getDefaultLocalProgramsBase configStackRoot configPlatform override =
 
 -- | Load the configuration, using current directory, environment variables,
 -- and defaults as necessary.
-loadConfig
-  :: RIO Config a
+--
+-- Should only be used from within Stack.Runners
+withConfigInternal
+  :: (DockerEntrypoint -> RIO Config ())
+  -> RIO Config a
   -> RIO Runner a -- concrete to avoid reloading the config
-loadConfig inner = do
+withConfigInternal dockerEntrypoint inner = do
     go <- view globalOptsL
     let configArgs = globalConfigMonoid go
         mresolver = globalResolver go
@@ -437,12 +439,12 @@ loadConfig inner = do
             (mconcat $ configArgs : addConfigMonoid extraConfigs)
             inner2
 
-    let withConfig = case mproject of
+    let withConfig' = case mproject of
           PCNoConfig extraDeps -> configNoLocalConfig stackRoot mresolver mcompiler configArgs extraDeps
           PCProject _project -> loadHelper
           PCNoProject -> loadHelper
 
-    withConfig $ \config -> do
+    withConfig' $ \config -> do
       unless (mkVersion' Meta.version `withinRange` configRequireStackVersion config)
           (throwM (BadStackVersionException (configRequireStackVersion config)))
       unless (configAllowDifferentUser config) $ do
@@ -450,7 +452,13 @@ loadConfig inner = do
               throwM (UserDoesn'tOwnDirectory stackRoot)
           forM_ (configProjectRoot config) $ \dir ->
               checkOwnership (dir </> configWorkDir config)
-      runRIO config inner
+      runRIO config $ do
+        -- If we have been relaunched in a Docker container, perform in-container initialization
+        -- (switch UID, etc.).  We do this after first loading the configuration since it must
+        -- happen ASAP but needs a configuration.
+        forM_ (globalDockerEntrypoint go) dockerEntrypoint
+
+        inner
 
 -- | Load the build configuration, adds build-specific values to config loaded by @loadConfig@.
 -- values.
@@ -700,10 +708,6 @@ isOwnedByUser path = liftIO $ do
             fileStatus <- getFileStatus (toFilePath path)
             user <- getEffectiveUserID
             return (user == fileOwner fileStatus)
-
--- | 'True' if we are currently running inside a Docker container.
-getInContainer :: (MonadIO m) => m Bool
-getInContainer = liftIO (isJust <$> lookupEnv inContainerEnvVar)
 
 -- | 'True' if we are currently running inside a Nix.
 getInNixShell :: (MonadIO m) => m Bool

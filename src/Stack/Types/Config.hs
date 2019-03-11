@@ -164,6 +164,7 @@ module Stack.Types.Config
   ,envOverrideSettingsL
   ,shouldForceGhcColorFlag
   ,appropriateGhcColorFlag
+  ,getInContainer
   -- * Lens reexport
   ,view
   ,to
@@ -223,6 +224,7 @@ import           Stack.Types.Resolver
 import           Stack.Types.SourceMap
 import           Stack.Types.TemplateName
 import           Stack.Types.Version
+import           System.Environment (lookupEnv)
 import qualified System.FilePath as FilePath
 import           System.PosixCompat.Types (UserID, GroupID, FileMode)
 import           RIO.Process (ProcessContext, HasProcessContext (..), findExecutable)
@@ -2012,3 +2014,7 @@ terminalL = globalOptsL.lens globalTerminal (\x y -> x { globalTerminal = y })
 -- | See 'globalReExecVersion'
 reExecL :: HasRunner env => SimpleGetter env Bool
 reExecL = globalOptsL.to (isJust . globalReExecVersion)
+
+-- | 'True' if we are currently running inside a Docker container.
+getInContainer :: (MonadIO m) => m Bool
+getInContainer = liftIO (isJust <$> lookupEnv inContainerEnvVar)

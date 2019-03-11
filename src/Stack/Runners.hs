@@ -11,9 +11,9 @@ module Stack.Runners
       -- * Runner
     , withRunner
       -- * Config
-    , withGlobalConfigAndLock
-    , withLoadConfig
-    , withLoadConfigAndLock
+    , withGlobalConfig
+    , withConfig
+    , withConfigAndLock
       -- * BuildConfig
     , withActualBuildConfig
     , withActualBuildConfigAndLock
@@ -132,32 +132,19 @@ withRunner go inner = do
 
 -- | Loads global config, ignoring any configuration which would be
 -- loaded due to $PWD.
-withGlobalConfigAndLock :: RIO Config a -> RIO Runner a
-withGlobalConfigAndLock inner = do
+withGlobalConfig :: RIO Config a -> RIO Runner a
+withGlobalConfig inner = do
   let modifyGO go = go { globalStackYaml = SYLGlobal }
-  local (over globalOptsL modifyGO) $ loadConfig $ do
-    root <- view stackRootL
-    withUserFileLock root $ \_lk -> inner
+  local (over globalOptsL modifyGO) $ withConfig inner
 
--- | Load the configuration. Convenience function used
--- throughout this module.
-withLoadConfig
-  :: RIO Config a
-  -> RIO Runner a
-withLoadConfig inner = do
-    go <- view globalOptsL
-    loadConfig $ do
-      -- If we have been relaunched in a Docker container, perform in-container initialization
-      -- (switch UID, etc.).  We do this after first loading the configuration since it must
-      -- happen ASAP but needs a configuration.
-      forM_ (globalDockerEntrypoint go) Docker.entrypoint
-      inner
+withConfig :: RIO Config a -> RIO Runner a
+withConfig = withConfigInternal Docker.entrypoint
 
-withLoadConfigAndLock
+withConfigAndLock
   :: (Maybe FileLock -> RIO Config a)
   -> RIO Runner a
-withLoadConfigAndLock inner =
-  withLoadConfig $ do
+withConfigAndLock inner =
+  withConfig $ do
     root <- view stackRootL
     withUserFileLock root inner
 
