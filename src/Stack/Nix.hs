@@ -31,12 +31,10 @@ import           RIO.Process (processContextL, exec)
 -- | If Nix is enabled, re-runs the currently running OS command in a Nix container.
 -- Otherwise, runs the inner action.
 reexecWithOptionalShell
-    :: HasConfig env
-    => Path Abs Dir -- ^ project root
-    -> WantedCompiler
-    -> RIO env a -- ^ inner
+    :: HasBuildConfig env
+    => RIO env a -- ^ inner
     -> RIO env a
-reexecWithOptionalShell projectRoot compilerVersion inner =
+reexecWithOptionalShell inner =
   do config <- view configL
      inShell <- getInNixShell
      inContainer <- getInContainer
@@ -50,25 +48,25 @@ reexecWithOptionalShell projectRoot compilerVersion inner =
            exePath <- liftIO getExecutablePath
            return (exePath, args)
      if nixEnable (configNix config) && not inShell && (not isReExec || inContainer)
-        then runShellAndExit projectRoot compilerVersion getCmdArgs
+        then runShellAndExit getCmdArgs
         else inner
 
 
 runShellAndExit
-    :: HasConfig env
-    => Path Abs Dir
-    -> WantedCompiler
-    -> RIO env (String, [String])
+    :: HasBuildConfig env
+    => RIO env (String, [String])
     -> RIO env void
-runShellAndExit projectRoot compilerVersion getCmdArgs = do
+runShellAndExit getCmdArgs = do
    config <- view configL
    envOverride <- view processContextL
    local (set processContextL envOverride) $ do
      (cmnd,args) <- fmap (escape *** map escape) getCmdArgs
+     projectRoot <- view projectRootL
      mshellFile <-
          traverse (resolveFile projectRoot) $
          nixInitFile (configNix config)
      inContainer <- getInContainer
+     compilerVersion <- view wantedCompilerVersionL
      ghc <- either throwIO return $ nixCompiler compilerVersion
      let pkgsInConfig = nixPackages (configNix config)
          pkgs = pkgsInConfig ++ [ghc, "git", "gcc", "gmp"]

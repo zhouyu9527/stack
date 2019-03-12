@@ -216,22 +216,19 @@ withEnvConfigExt skipDocker needTargets boptsCLI mbefore inner mafter = do
                inner lk2
 
     bconfig <- ask
-    projectRoot <- view projectRootL
     let inner'' lk = do
             envConfig <- runRIO bconfig $ setupEnv needTargets boptsCLI Nothing
             runRIO envConfig (inner' lk)
 
-    compilerVersion <- view wantedCompilerVersionL
     case skipDocker of
       SkipDocker ->
         sequence_ mbefore *>
-        Nix.reexecWithOptionalShell projectRoot compilerVersion (inner'' lk0) <*
+        Nix.reexecWithOptionalShell (inner'' lk0) <*
         sequence_ mafter
       WithDocker -> Docker.reexecWithOptionalContainer
-                      projectRoot
                       mbefore
                       (runRIO bconfig
-                        (Nix.reexecWithOptionalShell projectRoot compilerVersion (inner'' lk0)))
+                        (Nix.reexecWithOptionalShell (inner'' lk0)))
                       mafter
                       (Just $
                             do lk' <- readIORef curLk

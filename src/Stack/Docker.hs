@@ -88,15 +88,14 @@ import qualified System.Posix.User as PosixUser
 -- for this is releasing a lock.  After launching reexecution, the host process becomes
 -- nothing but an manager for the call into docker and thus may not hold the lock.
 reexecWithOptionalContainer
-    :: HasConfig env
-    => Path Abs Dir -- ^ project root
-    -> Maybe (RIO env ()) -- ^ perform before
+    :: HasBuildConfig env
+    => Maybe (RIO env ()) -- ^ perform before
     -> RIO env a -- ^ inner action
     -> Maybe (RIO env ()) -- ^ perform after
     -> Maybe (RIO env ()) -- ^ release
     -> RIO env a
-reexecWithOptionalContainer projectRoot =
-    execWithOptionalContainer projectRoot getCmdArgs
+reexecWithOptionalContainer =
+    execWithOptionalContainer getCmdArgs
   where
     getCmdArgs docker imageInfo isRemoteDocker = do
         config <- view configL
@@ -188,15 +187,14 @@ reexecWithOptionalContainer projectRoot =
 --
 -- This takes an optional release action just like `reexecWithOptionalContainer`.
 execWithOptionalContainer
-    :: HasConfig env
-    => Path Abs Dir -- ^ project root
-    -> GetCmdArgs env
+    :: HasBuildConfig env
+    => GetCmdArgs env
     -> Maybe (RIO env ()) -- ^ before
     -> RIO env a -- ^ inner
     -> Maybe (RIO env ()) -- ^ after
     -> Maybe (RIO env ()) -- ^ release
     -> RIO env a
-execWithOptionalContainer projectRoot getCmdArgs mbefore inner mafter mrelease =
+execWithOptionalContainer getCmdArgs mbefore inner mafter mrelease =
   do config <- view configL
      inContainer <- getInContainer
      isReExec <- view reExecL
@@ -211,7 +209,6 @@ execWithOptionalContainer projectRoot getCmdArgs mbefore inner mafter mrelease =
             do fromMaybeAction mrelease
                runContainerAndExit
                  getCmdArgs
-                 projectRoot
                  (fromMaybeAction mbefore)
                  (fromMaybeAction mafter)
   where
@@ -228,14 +225,12 @@ preventInContainer inner =
 
 -- | Run a command in a new Docker container, then exit the process.
 runContainerAndExit
-  :: HasConfig env
+  :: HasBuildConfig env
   => GetCmdArgs env
-  -> Path Abs Dir -- ^ Project root
   -> RIO env ()  -- ^ Action to run before
   -> RIO env ()  -- ^ Action to run after
   -> RIO env void
 runContainerAndExit getCmdArgs
-                    projectRoot
                     before
                     after = do
      config <- view configL
@@ -270,6 +265,7 @@ runContainerAndExit getCmdArgs
                   Just ii2 -> return ii2
                   Nothing -> throwM (InspectFailedException image)
          | otherwise -> throwM (NotPulledException image)
+     projectRoot <- view projectRootL
      sandboxDir <- projectDockerSandboxDir projectRoot
      let ImageConfig {..} = iiConfig
          imageEnvVars = map (break (== '=')) icEnv

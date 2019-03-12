@@ -636,11 +636,9 @@ setupCmd sco@SetupCmdOpts{..} =
     when (isJust scoUpgradeCabal && nixEnabled) $ throwIO UpgradeCabalUnusable
 
     compilerVersion <- view wantedCompilerVersionL
-    projectRoot <- view projectRootL
     Docker.reexecWithOptionalContainer
-        projectRoot
         Nothing
-        (Nix.reexecWithOptionalShell projectRoot compilerVersion $ do
+        (Nix.reexecWithOptionalShell $ do
          (wantedCompiler, compilerCheck, mstack) <-
            case scoCompilerVersion of
              Just v -> pure (v, MatchMinor, Nothing)
@@ -836,10 +834,7 @@ execCmd :: ExecOpts -> RIO Runner ()
 execCmd ExecOpts {..} =
     case eoExtra of
         ExecOptsPlain -> withConfig $ withBuildConfig $ do
-          compilerVersion <- view wantedCompilerVersionL
-          projectRoot <- view projectRootL
           Docker.reexecWithOptionalContainer
-              projectRoot
               Nothing
               (withDefaultEnvConfigAndLock $ \buildLock -> do -- FIXME this has to be broken, right? we already did the loading!
                   config <- view configL
@@ -851,7 +846,7 @@ execCmd ExecOpts {..} =
                           (ExecGhc, args) -> return ("ghc", args)
                           (ExecRunGhc, args) -> return ("runghc", args)
                       munlockFile buildLock
-                      Nix.reexecWithOptionalShell projectRoot compilerVersion (exec cmd args))
+                      Nix.reexecWithOptionalShell (exec cmd args))
               Nothing
               Nothing
         ExecOptsEmbellished {..} -> do
