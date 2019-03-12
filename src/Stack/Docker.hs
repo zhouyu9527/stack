@@ -176,9 +176,7 @@ getCmdArgs docker imageInfo isRemoteDocker = do
 
 -- | Before, after, and release actions to run with Docker FIXME!
 data DockerPerform env = DockerPerform
-  { dpBefore :: !(Maybe (RIO env ()))
-  , dpAfter :: !(Maybe (RIO env ()))
-  , dpRelease :: !(Maybe (RIO env ()))
+  { dpRelease :: !(Maybe (RIO env ()))
   }
 
 -- | If Docker is enabled, re-runs the currently running OS command in a Docker container.
@@ -197,18 +195,12 @@ reexecWithOptionalContainer dp inner =
   do config <- view configL
      inContainer <- getInContainer
      isReExec <- view reExecL
-     if | inContainer && not isReExec && (isJust (dpBefore dp) || isJust (dpAfter dp)) ->
-            throwIO OnlyOnHostException
+     if | inContainer && not isReExec -> throwIO OnlyOnHostException
         | inContainer -> inner
-        | not (dockerEnable (configDocker config)) ->
-            fromMaybeAction (dpBefore dp) *>
-            inner <*
-            fromMaybeAction (dpAfter dp)
+        | not (dockerEnable (configDocker config)) -> inner
         | otherwise ->
             do fromMaybeAction $ dpRelease dp
                runContainerAndExit
-                 (fromMaybeAction (dpBefore dp))
-                 (fromMaybeAction (dpAfter dp))
   where
     fromMaybeAction Nothing = return ()
     fromMaybeAction (Just hook) = hook
@@ -224,11 +216,8 @@ preventInContainer inner =
 -- | Run a command in a new Docker container, then exit the process.
 runContainerAndExit
   :: HasBuildConfig env
-  => RIO env ()  -- ^ Action to run before
-  -> RIO env ()  -- ^ Action to run after
-  -> RIO env void
-runContainerAndExit before
-                    after = do
+  => RIO env void
+runContainerAndExit = do
      config <- view configL
      let docker = configDocker config
      checkDockerVersion docker
@@ -341,9 +330,9 @@ runContainerAndExit before
          ,[image]
          ,[cmnd]
          ,args])
-     before
 -- MSS 2018-08-30 can the CPP below be removed entirely, and instead exec the
 -- `docker` process so that it can handle the signals directly?
+-- FIXME clean this up, and use an exec instead of spawn
 #ifndef WINDOWS
      run <- askRunInIO
      oldHandlers <- forM [sigINT,sigABRT,sigHUP,sigPIPE,sigTERM,sigUSR1,sigUSR2] $ \sig -> do
@@ -372,8 +361,7 @@ runContainerAndExit before
          )
      case e of
        Left (ProcessExitedUnsuccessfully _ ec) -> liftIO (exitWith ec)
-       Right () -> do after
-                      liftIO exitSuccess
+       Right () -> liftIO exitSuccess
   where
     -- This is using a hash of the Docker repository (without tag or digest) to ensure
     -- binaries/libraries aren't shared between Docker and host (or incompatible Docker images)

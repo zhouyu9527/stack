@@ -21,7 +21,6 @@ module Stack.Runners
     , withEnvConfigAndLock
     , withDefaultEnvConfig
     , withDefaultEnvConfigAndLock
-    , withEnvConfigExt
     , withEnvConfigDot
     ) where
 
@@ -157,14 +156,6 @@ withEnvConfig needTargets boptsCLI inner =
     withEnvConfigAndLock needTargets boptsCLI (\lk -> do munlockFile lk
                                                          inner)
 
-withEnvConfigAndLock
-    :: NeedTargets
-    -> BuildOptsCLI
-    -> (Maybe FileLock -> RIO EnvConfig a)
-    -> RIO BuildConfig a
-withEnvConfigAndLock needTargets boptsCLI inner =
-    withEnvConfigExt needTargets boptsCLI Nothing inner Nothing
-
 -- For now the non-locking version just unlocks immediately.
 -- That is, there's still a serialization point.
 withDefaultEnvConfig
@@ -178,26 +169,16 @@ withDefaultEnvConfigAndLock
     :: (Maybe FileLock -> RIO EnvConfig ())
     -> RIO BuildConfig ()
 withDefaultEnvConfigAndLock inner =
-    withEnvConfigExt AllowNoTargets defaultBuildOptsCLI Nothing inner Nothing
+    withEnvConfigAndLock AllowNoTargets defaultBuildOptsCLI inner
 
-withEnvConfigExt
+withEnvConfigAndLock
     :: NeedTargets
     -> BuildOptsCLI
-    -> Maybe (RIO BuildConfig ())
-    -- ^ Action to perform before the build.  This will be run on the host
-    -- OS even if Docker is enabled for builds.  The env config is not
-    -- available in this action, since that would require build tools to be
-    -- installed on the host OS.
     -> (Maybe FileLock -> RIO EnvConfig a)
     -- ^ Action that uses the build config.  If Docker is enabled for builds,
     -- this will be run in a Docker container.
-    -> Maybe (RIO BuildConfig ())
-    -- ^ Action to perform after the build.  This will be run on the host
-    -- OS even if Docker is enabled for builds.  The env config is not
-    -- available in this action, since that would require build tools to be
-    -- installed on the host OS.
     -> RIO BuildConfig a
-withEnvConfigExt needTargets boptsCLI mbefore inner mafter = do
+withEnvConfigAndLock needTargets boptsCLI inner = do
   root <- view stackRootL
   withUserFileLock root $ \lk0 -> do
     -- A local bit of state for communication between callbacks:
@@ -221,9 +202,7 @@ withEnvConfigExt needTargets boptsCLI mbefore inner mafter = do
 
     Docker.reexecWithOptionalContainer
       Docker.DockerPerform
-        { Docker.dpBefore = mbefore
-        , Docker.dpAfter = mafter
-        , Docker.dpRelease = Just $ readIORef curLk >>= munlockFile
+        { Docker.dpRelease = Just $ readIORef curLk >>= munlockFile
         }
       (Nix.reexecWithOptionalShell (inner'' lk0))
 
