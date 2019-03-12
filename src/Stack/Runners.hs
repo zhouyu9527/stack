@@ -16,7 +16,6 @@ module Stack.Runners
     , withConfig
       -- * BuildConfig
     , withBuildConfig
-    , withBuildConfigAndLock
       -- * EnvConfig
     , withEnvConfig
     , withEnvConfigAndLock
@@ -148,14 +147,6 @@ withBuildConfig :: RIO BuildConfig a -> RIO Config a
 withBuildConfig inner = do
   bconfig <- loadBuildConfig
   runRIO bconfig inner
-
-withBuildConfigAndLock
-  :: (Maybe FileLock -> RIO BuildConfig a)
-  -> RIO Config a
-withBuildConfigAndLock inner = do
-  root <- view stackRootL
-  bconfig <- loadBuildConfig
-  withUserFileLock root $ runRIO bconfig . inner
 
 withEnvConfig
     :: NeedTargets

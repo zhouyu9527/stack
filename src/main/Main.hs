@@ -629,7 +629,7 @@ pathCmd = Stack.Path.path goWithout goWith
 setupCmd :: SetupCmdOpts -> RIO Runner ()
 setupCmd sco@SetupCmdOpts{..} =
   withConfig $
-  withBuildConfigAndLock $ \lk -> do
+  withBuildConfig $ do
 
     -- FIXME time to just rip off the bandaid and kill UpgradeCabal
     nixEnabled <- view $ configL.to (nixEnable . configNix)
@@ -651,24 +651,15 @@ setupCmd sco@SetupCmdOpts{..} =
          setup sco wantedCompiler compilerCheck mstack
          )
         Nothing
-        (Just $ munlockFile lk)
+        Nothing
 
 
--- FIXME! Out of date comment
---
--- A runner specially built for the "stack clean" use case. For some
--- reason (hysterical raisins?), all of the functions in this module
--- which say BuildConfig actually work on an EnvConfig, while the
--- clean command legitimately only needs a BuildConfig. At some point
--- in the future, we could consider renaming everything for more
--- consistency.
---
 -- /NOTE/ This command always runs outside of the Docker environment,
 -- since it does not need to run any commands to get information on
 -- the project. This is a change as of #4480. For previous behavior,
 -- see issue #2010.
 cleanCmd :: CleanOpts -> RIO Runner ()
-cleanCmd opts = withConfig $ withBuildConfigAndLock $ \_lock -> clean opts
+cleanCmd opts = withConfig $ withBuildConfig $ clean opts
 
 -- | Helper for build and install commands
 buildCmd :: BuildOptsCLI -> RIO Runner ()
@@ -844,13 +835,12 @@ sdistCmd sdistOpts =
 execCmd :: ExecOpts -> RIO Runner ()
 execCmd ExecOpts {..} =
     case eoExtra of
-        ExecOptsPlain -> withConfig $ withBuildConfigAndLock $ \lk -> do
+        ExecOptsPlain -> withConfig $ withBuildConfig $ do
           compilerVersion <- view wantedCompilerVersionL
           projectRoot <- view projectRootL
           Docker.reexecWithOptionalContainer
               projectRoot
-              -- Unlock before transferring control away, whether using docker or not:
-              (Just $ munlockFile lk)
+              Nothing
               (withDefaultEnvConfigAndLock $ \buildLock -> do -- FIXME this has to be broken, right? we already did the loading!
                   config <- view configL
                   menv <- liftIO $ configProcessContextSettings config plainEnvSettings
@@ -863,7 +853,7 @@ execCmd ExecOpts {..} =
                       munlockFile buildLock
                       Nix.reexecWithOptionalShell projectRoot compilerVersion (exec cmd args))
               Nothing
-              Nothing -- Unlocked already above.
+              Nothing
         ExecOptsEmbellished {..} -> do
             let targets = concatMap words eoPackages
                 boptsCLI = defaultBuildOptsCLI
