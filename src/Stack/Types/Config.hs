@@ -214,7 +214,6 @@ import           Stack.Types.BuildPlan
 import           Stack.Types.Compiler
 import           Stack.Types.CompilerBuild
 import           Stack.Types.Docker
-import           Stack.Types.Image
 import           Stack.Types.NamedComponent
 import           Stack.Types.Nix
 import           Stack.Types.Resolver
@@ -310,7 +309,6 @@ data Config =
          -- ^ --extra-lib-dirs arguments
          ,configConcurrentTests     :: !Bool
          -- ^ Run test suites concurrently
-         ,configImage               :: !ImageOpts
          ,configTemplateParams      :: !(Map Text Text)
          -- ^ Parameters for templates.
          ,configScmInit             :: !(Maybe SCM)
@@ -717,8 +715,6 @@ data ConfigMonoid =
     -- ^ See: 'configConcurrentTests'
     ,configMonoidLocalBinPath        :: !(First FilePath)
     -- ^ Used to override the binary installation dir
-    ,configMonoidImageOpts           :: !ImageOptsMonoid
-    -- ^ Image creation options.
     ,configMonoidTemplateParameters  :: !(Map Text Text)
     -- ^ Template parameters.
     ,configMonoidScmInit             :: !(First SCM)
@@ -820,7 +816,6 @@ parseConfigMonoidObject rootDir obj = do
     configMonoidOverrideHpack <- First <$> obj ..:? configMonoidOverrideHpackName
     configMonoidConcurrentTests <- First <$> obj ..:? configMonoidConcurrentTestsName
     configMonoidLocalBinPath <- First <$> obj ..:? configMonoidLocalBinPathName
-    configMonoidImageOpts <- jsonSubWarnings (obj ..:?  configMonoidImageOptsName ..!= mempty)
     templates <- obj ..:? "templates"
     (configMonoidScmInit,configMonoidTemplateParameters) <-
       case templates of
@@ -959,9 +954,6 @@ configMonoidConcurrentTestsName = "concurrent-tests"
 
 configMonoidLocalBinPathName :: Text
 configMonoidLocalBinPathName = "local-bin-path"
-
-configMonoidImageOptsName :: Text
-configMonoidImageOptsName = "image"
 
 configMonoidScmInitName :: Text
 configMonoidScmInitName = "scm-init"

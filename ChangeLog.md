@@ -62,6 +62,8 @@ Behavior changes:
 
 * Remove the `--upgrade-cabal` flag to `stack setup`.
 
+* Remove the `stack image` command.
+
 Other enhancements:
 
 * Defer loading up of files for local packages. This allows us to get
