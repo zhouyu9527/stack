@@ -26,6 +26,7 @@ module Stack.Docker
   ,reset
   ,reExecArgName
   ,StackDockerException(..)
+  ,DockerPerform(..)
   ) where
 
 import           Stack.Prelude
@@ -173,6 +174,12 @@ getCmdArgs docker imageInfo isRemoteDocker = do
         let mountPath = hostBinDir FP.</> FP.takeBaseName exePath
         return (mountPath, args, [], [Mount exePath mountPath])
 
+-- | Before, after, and release actions to run with Docker FIXME!
+data DockerPerform env = DockerPerform
+  { dpBefore :: !(Maybe (RIO env ()))
+  , dpAfter :: !(Maybe (RIO env ()))
+  , dpRelease :: !(Maybe (RIO env ()))
+  }
 
 -- | If Docker is enabled, re-runs the currently running OS command in a Docker container.
 -- Otherwise, runs the inner action.
@@ -183,27 +190,25 @@ getCmdArgs docker imageInfo isRemoteDocker = do
 -- nothing but an manager for the call into docker and thus may not hold the lock.
 reexecWithOptionalContainer
     :: HasBuildConfig env
-    => Maybe (RIO env ()) -- ^ perform before
+    => DockerPerform env
     -> RIO env a -- ^ inner action
-    -> Maybe (RIO env ()) -- ^ perform after
-    -> Maybe (RIO env ()) -- ^ release
     -> RIO env a
-reexecWithOptionalContainer mbefore inner mafter mrelease =
+reexecWithOptionalContainer dp inner =
   do config <- view configL
      inContainer <- getInContainer
      isReExec <- view reExecL
-     if | inContainer && not isReExec && (isJust mbefore || isJust mafter) ->
+     if | inContainer && not isReExec && (isJust (dpBefore dp) || isJust (dpAfter dp)) ->
             throwIO OnlyOnHostException
         | inContainer -> inner
         | not (dockerEnable (configDocker config)) ->
-            fromMaybeAction mbefore *>
+            fromMaybeAction (dpBefore dp) *>
             inner <*
-            fromMaybeAction mafter
+            fromMaybeAction (dpAfter dp)
         | otherwise ->
-            do fromMaybeAction mrelease
+            do fromMaybeAction $ dpRelease dp
                runContainerAndExit
-                 (fromMaybeAction mbefore)
-                 (fromMaybeAction mafter)
+                 (fromMaybeAction (dpBefore dp))
+                 (fromMaybeAction (dpAfter dp))
   where
     fromMaybeAction Nothing = return ()
     fromMaybeAction (Just hook) = hook

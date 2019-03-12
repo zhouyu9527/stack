@@ -637,7 +637,7 @@ setupCmd sco@SetupCmdOpts{..} =
 
     compilerVersion <- view wantedCompilerVersionL
     Docker.reexecWithOptionalContainer
-        Nothing
+        (Docker.DockerPerform Nothing Nothing Nothing)
         (Nix.reexecWithOptionalShell $ do
          (wantedCompiler, compilerCheck, mstack) <-
            case scoCompilerVersion of
@@ -648,8 +648,6 @@ setupCmd sco@SetupCmdOpts{..} =
                <*> (Just <$> view stackYamlL)
          setup sco wantedCompiler compilerCheck mstack
          )
-        Nothing
-        Nothing
 
 
 -- /NOTE/ This command always runs outside of the Docker environment,
@@ -835,7 +833,7 @@ execCmd ExecOpts {..} =
     case eoExtra of
         ExecOptsPlain -> withConfig $ withBuildConfig $ do
           Docker.reexecWithOptionalContainer
-              Nothing
+              (Docker.DockerPerform Nothing Nothing Nothing)
               (withDefaultEnvConfigAndLock $ \buildLock -> do -- FIXME this has to be broken, right? we already did the loading!
                   config <- view configL
                   menv <- liftIO $ configProcessContextSettings config plainEnvSettings
@@ -847,8 +845,6 @@ execCmd ExecOpts {..} =
                           (ExecRunGhc, args) -> return ("runghc", args)
                       munlockFile buildLock
                       Nix.reexecWithOptionalShell (exec cmd args))
-              Nothing
-              Nothing
         ExecOptsEmbellished {..} -> do
             let targets = concatMap words eoPackages
                 boptsCLI = defaultBuildOptsCLI

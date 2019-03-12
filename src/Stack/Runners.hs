@@ -226,13 +226,12 @@ withEnvConfigExt skipDocker needTargets boptsCLI mbefore inner mafter = do
         Nix.reexecWithOptionalShell (inner'' lk0) <*
         sequence_ mafter
       WithDocker -> Docker.reexecWithOptionalContainer
-                      mbefore
-                      (runRIO bconfig
-                        (Nix.reexecWithOptionalShell (inner'' lk0)))
-                      mafter
-                      (Just $
-                            do lk' <- readIORef curLk
-                               munlockFile lk')
+                      Docker.DockerPerform
+                        { Docker.dpBefore = mbefore
+                        , Docker.dpAfter = mafter
+                        , Docker.dpRelease = Just $ readIORef curLk >>= munlockFile
+                        }
+                      (Nix.reexecWithOptionalShell (inner'' lk0))
 
 -- Plumbing for --test and --bench flags
 withEnvConfigDot
