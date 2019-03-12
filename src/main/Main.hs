@@ -630,12 +630,6 @@ setupCmd :: SetupCmdOpts -> RIO Runner ()
 setupCmd sco@SetupCmdOpts{..} =
   withConfig $
   withBuildConfig $ do
-
-    -- FIXME time to just rip off the bandaid and kill UpgradeCabal
-    nixEnabled <- view $ configL.to (nixEnable . configNix)
-    when (isJust scoUpgradeCabal && nixEnabled) $ throwIO UpgradeCabalUnusable
-
-    compilerVersion <- view wantedCompilerVersionL
     Docker.reexecWithOptionalContainer
         (Docker.DockerPerform Nothing Nothing Nothing)
         (Nix.reexecWithOptionalShell $ do
@@ -643,7 +637,7 @@ setupCmd sco@SetupCmdOpts{..} =
            case scoCompilerVersion of
              Just v -> pure (v, MatchMinor, Nothing)
              Nothing -> (,,)
-               <$> pure compilerVersion
+               <$> view wantedCompilerVersionL
                <*> view (configL.to configCompilerCheck)
                <*> (Just <$> view stackYamlL)
          setup sco wantedCompiler compilerCheck mstack
