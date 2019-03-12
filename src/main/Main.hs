@@ -102,7 +102,6 @@ import           Stack.Types.Version
 import           Stack.Types.Config
 import           Stack.Types.Compiler
 import           Stack.Types.NamedComponent
-import           Stack.Types.Nix
 import           Stack.Types.SourceMap
 import           Stack.Unpack
 import           Stack.Upgrade
@@ -979,7 +978,6 @@ imgDockerCmd :: (Bool, [Text]) -> RIO Runner ()
 imgDockerCmd (rebuild,images) = withConfig $ withBuildConfig $ do
     mProjectRoot <- view $ configL.to configProjectRoot
     withEnvConfigExt
-        WithDocker
         NeedTargets
         defaultBuildOptsCLI
         Nothing

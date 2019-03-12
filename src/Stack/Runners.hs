@@ -163,7 +163,7 @@ withEnvConfigAndLock
     -> (Maybe FileLock -> RIO EnvConfig a)
     -> RIO BuildConfig a
 withEnvConfigAndLock needTargets boptsCLI inner =
-    withEnvConfigExt WithDocker needTargets boptsCLI Nothing inner Nothing
+    withEnvConfigExt needTargets boptsCLI Nothing inner Nothing
 
 -- For now the non-locking version just unlocks immediately.
 -- That is, there's still a serialization point.
@@ -178,11 +178,10 @@ withDefaultEnvConfigAndLock
     :: (Maybe FileLock -> RIO EnvConfig ())
     -> RIO BuildConfig ()
 withDefaultEnvConfigAndLock inner =
-    withEnvConfigExt WithDocker AllowNoTargets defaultBuildOptsCLI Nothing inner Nothing
+    withEnvConfigExt AllowNoTargets defaultBuildOptsCLI Nothing inner Nothing
 
 withEnvConfigExt
-    :: WithDocker
-    -> NeedTargets
+    :: NeedTargets
     -> BuildOptsCLI
     -> Maybe (RIO BuildConfig ())
     -- ^ Action to perform before the build.  This will be run on the host
@@ -198,7 +197,7 @@ withEnvConfigExt
     -- available in this action, since that would require build tools to be
     -- installed on the host OS.
     -> RIO BuildConfig a
-withEnvConfigExt skipDocker needTargets boptsCLI mbefore inner mafter = do
+withEnvConfigExt needTargets boptsCLI mbefore inner mafter = do
   root <- view stackRootL
   withUserFileLock root $ \lk0 -> do
     -- A local bit of state for communication between callbacks:
@@ -220,18 +219,13 @@ withEnvConfigExt skipDocker needTargets boptsCLI mbefore inner mafter = do
             envConfig <- runRIO bconfig $ setupEnv needTargets boptsCLI Nothing
             runRIO envConfig (inner' lk)
 
-    case skipDocker of
-      SkipDocker ->
-        sequence_ mbefore *>
-        Nix.reexecWithOptionalShell (inner'' lk0) <*
-        sequence_ mafter
-      WithDocker -> Docker.reexecWithOptionalContainer
-                      Docker.DockerPerform
-                        { Docker.dpBefore = mbefore
-                        , Docker.dpAfter = mafter
-                        , Docker.dpRelease = Just $ readIORef curLk >>= munlockFile
-                        }
-                      (Nix.reexecWithOptionalShell (inner'' lk0))
+    Docker.reexecWithOptionalContainer
+      Docker.DockerPerform
+        { Docker.dpBefore = mbefore
+        , Docker.dpAfter = mafter
+        , Docker.dpRelease = Just $ readIORef curLk >>= munlockFile
+        }
+      (Nix.reexecWithOptionalShell (inner'' lk0))
 
 -- Plumbing for --test and --bench flags
 withEnvConfigDot
