@@ -612,7 +612,7 @@ setupCmd sco@SetupCmdOpts{..} =
   withConfig $
   withBuildConfig $ do
     Docker.reexecWithOptionalContainer
-        (Docker.DockerPerform Nothing)
+        Nothing
         (Nix.reexecWithOptionalShell $ do
          (wantedCompiler, compilerCheck, mstack) <-
            case scoCompilerVersion of
@@ -808,7 +808,7 @@ execCmd ExecOpts {..} =
     case eoExtra of
         ExecOptsPlain -> withConfig $ withBuildConfig $ do
           Docker.reexecWithOptionalContainer
-              (Docker.DockerPerform Nothing)
+              Nothing
               (withDefaultEnvConfigAndLock $ \buildLock -> do -- FIXME this has to be broken, right? we already did the loading!
                   config <- view configL
                   menv <- liftIO $ configProcessContextSettings config plainEnvSettings

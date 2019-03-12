@@ -200,10 +200,9 @@ withEnvConfigAndLock needTargets boptsCLI inner = do
             envConfig <- runRIO bconfig $ setupEnv needTargets boptsCLI Nothing
             runRIO envConfig (inner' lk)
 
+    mlockFile <- readIORef curLk
     Docker.reexecWithOptionalContainer
-      Docker.DockerPerform
-        { Docker.dpRelease = Just $ readIORef curLk >>= munlockFile
-        }
+      mlockFile
       (Nix.reexecWithOptionalShell (inner'' lk0))
 
 -- Plumbing for --test and --bench flags

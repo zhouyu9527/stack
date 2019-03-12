@@ -26,7 +26,6 @@ module Stack.Docker
   ,reset
   ,reExecArgName
   ,StackDockerException(..)
-  ,DockerPerform(..)
   ) where
 
 import           Stack.Prelude
@@ -65,6 +64,7 @@ import           Stack.Setup (ensureDockerStackExe)
 import           System.Directory (canonicalizePath,getHomeDirectory)
 import           System.Environment (getEnv,getEnvironment,getProgName,getArgs,getExecutablePath)
 import           System.Exit (exitSuccess, exitWith, ExitCode(..))
+import           System.FileLock (FileLock, unlockFile)
 import qualified System.FilePath as FP
 import           System.IO (stderr,stdin,stdout)
 import           System.IO.Error (isDoesNotExistError)
@@ -174,11 +174,6 @@ getCmdArgs docker imageInfo isRemoteDocker = do
         let mountPath = hostBinDir FP.</> FP.takeBaseName exePath
         return (mountPath, args, [], [Mount exePath mountPath])
 
--- | Before, after, and release actions to run with Docker FIXME!
-data DockerPerform env = DockerPerform
-  { dpRelease :: !(Maybe (RIO env ()))
-  }
-
 -- | If Docker is enabled, re-runs the currently running OS command in a Docker container.
 -- Otherwise, runs the inner action.
 --
@@ -188,10 +183,10 @@ data DockerPerform env = DockerPerform
 -- nothing but an manager for the call into docker and thus may not hold the lock.
 reexecWithOptionalContainer
     :: HasBuildConfig env
-    => DockerPerform env
+    => Maybe FileLock
     -> RIO env a -- ^ inner action
     -> RIO env a
-reexecWithOptionalContainer dp inner =
+reexecWithOptionalContainer mfileLock inner =
   do config <- view configL
      inContainer <- getInContainer
      isReExec <- view reExecL
@@ -199,11 +194,8 @@ reexecWithOptionalContainer dp inner =
         | inContainer -> inner
         | not (dockerEnable (configDocker config)) -> inner
         | otherwise ->
-            do fromMaybeAction $ dpRelease dp
+            do liftIO $ traverse_ unlockFile mfileLock
                runContainerAndExit
-  where
-    fromMaybeAction Nothing = return ()
-    fromMaybeAction (Just hook) = hook
 
 -- | Error if running in a container.
 preventInContainer :: MonadIO m => m () -> m ()
