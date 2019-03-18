@@ -18,7 +18,7 @@
 -- probably default to behaving like cabal, possibly with spitting out
 -- a warning that "you should run `stk init` to make things better".
 module Stack.Config
-  (loadConfig
+  (loadConfigInternal
   ,loadConfigYaml
   ,packagesParser
   ,getImplicitGlobalProjectDir
@@ -388,8 +388,11 @@ getDefaultLocalProgramsBase configStackRoot configPlatform override =
 
 -- | Load the configuration, using current directory, environment variables,
 -- and defaults as necessary.
-loadConfig :: HasRunner env => (Config -> RIO env a) -> RIO env a
-loadConfig inner = do
+--
+-- Note that this function should only be called from Stack.Runners,
+-- which will properly call the Docker entry point code.
+loadConfigInternal :: HasRunner env => (Config -> RIO env a) -> RIO env a
+loadConfigInternal inner = do
     mstackYaml <- view $ globalOptsL.to globalStackYaml
     mproject <- loadProjectConfig mstackYaml
     mresolver <- view $ globalOptsL.to globalResolver

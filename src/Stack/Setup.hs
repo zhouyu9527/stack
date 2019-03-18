@@ -83,7 +83,7 @@ import              Stack.Build (build)
 import              Stack.Build.Haddock (shouldHaddockDeps)
 import              Stack.Build.Source (loadSourceMap, hashSourceMapData)
 import              Stack.Build.Target (NeedTargets(..), parseTargets)
-import              Stack.Config (loadConfig, loadBuildConfig)
+import              Stack.Config (loadConfigInternal, loadBuildConfig)
 import              Stack.Constants
 import              Stack.Constants.Config (distRelativeDir)
 import              Stack.GhcPkg (createDatabase, getCabalPkgVer, getGlobalDB, mkGhcPackagePath, ghcPkgPathEnvVar)
@@ -1231,7 +1231,7 @@ ensureGhcjsBooted cv shouldBoot bootOpts = do
                 bootGhcjs ghcjsVersion actualStackYaml destDir bootOpts
         Left ece -> throwIO ece
 
-bootGhcjs :: (HasRunner env, HasProcessContext env)
+bootGhcjs :: HasConfig env
           => Version -> Path Abs File -> Path Abs Dir -> [String] -> RIO env ()
 bootGhcjs ghcjsVersion stackYaml destDir bootOpts =
   loadGhcjsEnvConfig stackYaml (destDir </> relDirBin) $ \envConfig -> do
@@ -1315,14 +1315,17 @@ bootGhcjs ghcjsVersion stackYaml destDir bootOpts =
     logStickyDone "GHCJS booted."
 
 loadGhcjsEnvConfig
-  :: HasRunner env
+  :: HasConfig env
   => Path Abs File
   -> Path b t
   -> (EnvConfig -> RIO env a)
   -> RIO env a
 loadGhcjsEnvConfig stackYaml binPath inner =
     local (over globalOptsL modifyGO) $
-    loadConfig $ \config -> do
+    -- Intentionally calling loadconfigInternal here, without the
+    -- Docker entrypoint code, since that code was already called by
+    -- the wrapper Config
+    loadConfigInternal $ \config -> do
         bconfig <- runRIO config loadBuildConfig
         envConfig <- runRIO bconfig $ setupEnv AllowNoTargets defaultBuildOptsCLI Nothing
         inner envConfig

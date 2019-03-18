@@ -5,7 +5,7 @@
 
 -- | Utilities for running stack commands.
 module Stack.Runners
-    ( withGlobalConfigAndLock
+    ( withNoProject
     , withEnvConfigAndLock
     , withDefaultEnvConfigAndLock
     , withBuildConfig
@@ -73,16 +73,17 @@ withUserFileLock dir act = withRunInIO $ \run -> do
                                             act $ Just lk))
         else run $ act Nothing
 
--- | Loads global config, ignoring any configuration which would be
--- loaded due to $PWD.
-withGlobalConfigAndLock
-    :: RIO Config ()
-    -> RIO Runner ()
-withGlobalConfigAndLock inner =
-    local (set stackYamlLocL SYLNoProject) $
-    loadConfig $ \config ->
-    withUserFileLock (view stackRootL config) $ \_lk ->
-    runRIO config inner
+-- | Modify the StackYamlLoc to require no project.
+withNoProject :: RIO Runner a -> RIO Runner a
+withNoProject inner = do
+  loc <- view stackYamlLocL
+  case loc of
+    SYLDefault -> pure ()
+    SYLOverride _ -> logWarn "Ignoring override stack.yaml location"
+    SYLNoConfig _ -> logWarn "Ignoring override no-config run"
+    SYLNoProject -> pure ()
+
+  local (set stackYamlLocL SYLNoProject) inner
 
 -- For now the non-locking version just unlocks immediately.
 -- That is, there's still a serialization point.
@@ -165,7 +166,7 @@ withConfig
   :: RIO Config a
   -> RIO Runner a
 withConfig inner =
-    loadConfig $ \config -> do
+    loadConfigInternal $ \config -> do
       -- If we have been relaunched in a Docker container, perform in-container initialization
       -- (switch UID, etc.).  We do this after first loading the configuration since it must
       -- happen ASAP but needs a configuration.

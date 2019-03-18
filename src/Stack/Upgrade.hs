@@ -18,8 +18,8 @@ import           Path
 import qualified Paths_stack as Paths
 import           Stack.Build
 import           Stack.Build.Target (NeedTargets(..))
-import           Stack.Config
 import           Stack.Constants
+import           Stack.Runners
 import           Stack.Setup
 import           Stack.Types.Config
 import           System.Console.ANSI (hSupportsANSIWithoutEmulation)
@@ -90,34 +90,30 @@ data UpgradeOpts = UpgradeOpts
     }
     deriving Show
 
-upgrade :: HasConfig env
-        => Maybe String -- ^ git hash at time of building, if known
+upgrade :: Maybe String -- ^ git hash at time of building, if known
         -> UpgradeOpts
-        -> RIO env ()
+        -> RIO Runner ()
 upgrade builtHash (UpgradeOpts mbo mso) =
     case (mbo, mso) of
         -- FIXME It would be far nicer to capture this case in the
         -- options parser itself so we get better error messages, but
         -- I can't think of a way to make it happen.
         (Nothing, Nothing) -> throwString "You must allow either binary or source upgrade paths"
-        (Just bo, Nothing) -> binary bo
-        (Nothing, Just so) -> source so
+        (Just bo, Nothing) -> binaryUpgrade bo
+        (Nothing, Just so) -> sourceUpgrade builtHash so
         -- See #2977 - if --git or --git-repo is specified, do source upgrade.
-        (_, Just so@(SourceOpts (Just _))) -> source so
-        (Just bo, Just so) -> binary bo `catchAny` \e -> do
+        (_, Just so@(SourceOpts (Just _))) -> sourceUpgrade builtHash so
+        (Just bo, Just so) -> binaryUpgrade bo `catchAny` \e -> do
             prettyWarnL
                [ flow "Exception occured when trying to perform binary upgrade:"
                , fromString . show $ e
                , line <> flow "Falling back to source upgrade"
                ]
 
-            source so
-  where
-    binary bo = binaryUpgrade bo
-    source so = sourceUpgrade builtHash so
+            sourceUpgrade builtHash so
 
-binaryUpgrade :: HasConfig env => BinaryOpts -> RIO env ()
-binaryUpgrade (BinaryOpts mplatform force' mver morg mrepo) = do
+binaryUpgrade :: BinaryOpts -> RIO Runner ()
+binaryUpgrade (BinaryOpts mplatform force' mver morg mrepo) = withNoProject $ withConfig $ do
     platforms0 <-
       case mplatform of
         Nothing -> preferredPlatforms
@@ -167,11 +163,12 @@ binaryUpgrade (BinaryOpts mplatform force' mver morg mrepo) = do
                     $ throwString "Non-success exit code from running newly downloaded executable"
 
 sourceUpgrade
-  :: HasConfig env
-  => Maybe String
+  :: Maybe String
   -> SourceOpts
-  -> RIO env ()
+  -> RIO Runner ()
 sourceUpgrade builtHash (SourceOpts gitRepo) =
+  -- globalResolver must always be Nothing, enforced in Main.hs
+  withConfig $
   withSystemTempDir "stack-upgrade" $ \tmp -> do
     mdir <- case gitRepo of
       Just (repo, branch) -> do
@@ -229,19 +226,15 @@ sourceUpgrade builtHash (SourceOpts gitRepo) =
                     unpackPackageLocation dir $ PLIHackage ident cfKey treeKey
                     pure $ Just dir
 
-    let modifyGO dir go = go
-          { globalResolver = Nothing -- always use the resolver settings in the stack.yaml file
-          , globalStackYaml = SYLOverride $ dir </> stackDotYaml
-          }
     forM_ mdir $ \dir ->
-      local (over globalOptsL (modifyGO dir)) $
-      loadConfig $ \config -> do
-        bconfig <- runRIO config loadBuildConfig
+      local (set stackYamlLocL (SYLOverride $ dir </> stackDotYaml)) $
+      withBuildConfig $ do
         let boptsCLI = defaultBuildOptsCLI
                 { boptsCLITargets = ["stack"]
                 }
-        envConfig1 <- runRIO bconfig $ setupEnv AllowNoTargets boptsCLI $ Just $
+        localPrograms <- view $ configL.to configLocalPrograms
+        envConfig1 <- setupEnv AllowNoTargets boptsCLI $ Just $
             "Try rerunning with --install-ghc to install the correct GHC into " <>
-            T.pack (toFilePath (configLocalPrograms (view configL bconfig)))
+            T.pack (toFilePath localPrograms)
         runRIO (set (buildOptsL.buildOptsInstallExesL) True envConfig1) $
             build Nothing Nothing

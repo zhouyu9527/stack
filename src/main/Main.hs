@@ -688,7 +688,6 @@ upgradeCmd upgradeOpts' = do
       logError "You cannot use the --resolver option with the upgrade command"
       liftIO exitFailure
     Nothing ->
-      withGlobalConfigAndLock $
       upgrade
 #ifdef USE_GIT_INFO
         (either (const Nothing) (Just . giHash) $$tGitInfoCwdTry)
@@ -968,18 +967,16 @@ dockerCleanupCmd cleanupOpts =
 initCmd :: InitOpts -> RIO Runner ()
 initCmd initOpts = do
     pwd <- getCurrentDir
-    go <- view globalOptsL
-    withGlobalConfigAndLock (initProject IsInitCmd pwd initOpts (globalResolver go))
+    withNoProject $ withConfig $ initProject IsInitCmd pwd initOpts
 
 -- | Create a project directory structure and initialize the stack config.
 newCmd :: (NewOpts,InitOpts) -> RIO Runner ()
 newCmd (newOpts,initOpts) =
-    withGlobalConfigAndLock $ do
+    withNoProject $ withConfig $ do
         dir <- new newOpts (forceOverwrite initOpts)
         exists <- doesFileExist $ dir </> stackDotYaml
-        when (forceOverwrite initOpts || not exists) $ do
-            go <- view globalOptsL
-            initProject IsNewCmd dir initOpts (globalResolver go)
+        when (forceOverwrite initOpts || not exists) $
+            initProject IsNewCmd dir initOpts
 
 -- | List the available templates.
 templatesCmd :: () -> RIO Runner ()

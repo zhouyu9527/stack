@@ -49,9 +49,8 @@ initProject
     => WhichSolverCmd
     -> Path Abs Dir
     -> InitOpts
-    -> Maybe AbstractResolver
     -> RIO env ()
-initProject whichCmd currDir initOpts mresolver = do
+initProject whichCmd currDir initOpts = do
     let dest = currDir </> stackDotYaml
 
     reldest <- toFilePath `liftM` makeRelativeToCurrentDir dest
@@ -72,7 +71,7 @@ initProject whichCmd currDir initOpts mresolver = do
     cabaldirs <- Set.toList . Set.unions <$> mapM find dirs'
     (bundle, dupPkgs)  <- cabalPackagesCheck cabaldirs noPkgMsg Nothing
 
-    (sd, flags, extraDeps, rbundle) <- getDefaultResolver whichCmd initOpts mresolver bundle
+    (sd, flags, extraDeps, rbundle) <- getDefaultResolver whichCmd initOpts bundle
 
     let ignored = Map.difference bundle rbundle
         dupPkgMsg
@@ -338,7 +337,6 @@ getDefaultResolver
     :: (HasConfig env, HasGHCVariant env)
     => WhichSolverCmd
     -> InitOpts
-    -> Maybe AbstractResolver
     -> Map PackageName (Path Abs File, C.GenericPackageDescription)
        -- ^ Src package name: cabal dir, cabal package description
     -> RIO env
@@ -350,7 +348,8 @@ getDefaultResolver
        --   , Flags for src packages and extra deps
        --   , Extra dependencies
        --   , Src packages actually considered)
-getDefaultResolver whichCmd initOpts mresolver bundle = do
+getDefaultResolver whichCmd initOpts bundle = do
+    mresolver <- view $ globalOptsL.to globalResolver
     sd <- maybe selectSnapResolver (makeConcreteResolver >=> flip loadResolver Nothing) mresolver
     getWorkingResolverPlan whichCmd initOpts bundle sd
     where
