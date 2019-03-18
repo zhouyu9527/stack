@@ -802,48 +802,39 @@ sdistCmd sdistOpts =
 -- | Execute a command.
 execCmd :: ExecOpts -> RIO Runner ()
 execCmd ExecOpts {..} =
-    case eoExtra of
-        ExecOptsPlain ->
-          withConfig $
-          withDefaultEnvConfigAndLock $ \buildLock -> do
-            config <- view configL
-            menv <- liftIO $ configProcessContextSettings config plainEnvSettings
-            withProcessContext menv $ do
-              (cmd, args) <-
-                case (eoCmd, eoArgs) of
-                  (ExecCmd cmd, args) -> return (cmd, args)
-                  (ExecRun, args) -> getRunCmd args
-                  (ExecGhc, args) -> return ("ghc", args)
-                  (ExecRunGhc, args) -> return ("runghc", args)
-              munlockFile buildLock
-              exec cmd args
-        ExecOptsEmbellished {..} -> do
-            let targets = concatMap words eoPackages
-                boptsCLI = defaultBuildOptsCLI
-                           { boptsCLITargets = map T.pack targets
-                           }
-            withConfig $ withEnvConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
-              unless (null targets) $ Stack.Build.build Nothing lk
+  withEO eoExtra $ \envSettings packages rtsOptions cwd -> do
+    let targets = concatMap words packages
+        boptsCLI = defaultBuildOptsCLI
+                   { boptsCLITargets = map T.pack targets
+                   }
+    withConfig $ withEnvConfigAndLock AllowNoTargets boptsCLI $ \lk -> do
+      unless (null targets) $ Stack.Build.build Nothing lk
 
-              config <- view configL
-              menv <- liftIO $ configProcessContextSettings config eoEnvSettings
-              withProcessContext menv $ do
-                -- Add RTS options to arguments
-                let argsWithRts args = if null eoRtsOptions
-                            then args :: [String]
-                            else args ++ ["+RTS"] ++ eoRtsOptions ++ ["-RTS"]
-                (cmd, args) <- case (eoCmd, argsWithRts eoArgs) of
-                    (ExecCmd cmd, args) -> return (cmd, args)
-                    (ExecRun, args) -> getRunCmd args
-                    (ExecGhc, args) -> getGhcCmd "" eoPackages args
-                    -- NOTE: This doesn't work for GHCJS, because it doesn't have
-                    -- a runghcjs binary.
-                    (ExecRunGhc, args) ->
-                        getGhcCmd "run" eoPackages args
-                munlockFile lk -- Unlock before transferring control away.
+      config <- view configL
+      menv <- liftIO $ configProcessContextSettings config envSettings
+      withProcessContext menv $ do
+        -- Add RTS options to arguments
+        let argsWithRts args = if null rtsOptions
+                    then args :: [String]
+                    else args ++ ["+RTS"] ++ rtsOptions ++ ["-RTS"]
+        (cmd, args) <- case (eoCmd, argsWithRts eoArgs) of
+            (ExecCmd cmd, args) -> return (cmd, args)
+            (ExecRun, args) -> getRunCmd args
+            (ExecGhc, args) -> getGhcCmd "" packages args
+            -- NOTE: This doesn't work for GHCJS, because it doesn't have
+            -- a runghcjs binary.
+            (ExecRunGhc, args) ->
+                getGhcCmd "run" packages args
+        munlockFile lk -- Unlock before transferring control away.
 
-                runWithPath eoCwd $ exec cmd args
+        runWithPath cwd $ exec cmd args
   where
+      withEO
+        :: ExecOptsExtra
+        -> (EnvSettings -> [String] -> [String] -> Maybe FilePath -> a)
+        -> a
+      withEO ExecOptsEmbellished {..} f = f eoEnvSettings eoPackages eoRtsOptions eoCwd
+      withEO ExecOptsPlain f = f plainEnvSettings [] [] Nothing
       -- return the package-id of the first package in GHC_PACKAGE_PATH
       getPkgId wc name = do
           mId <- findGhcPkgField wc [] name "id"
