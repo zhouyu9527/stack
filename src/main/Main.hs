@@ -803,29 +803,20 @@ sdistCmd sdistOpts =
 execCmd :: ExecOpts -> RIO Runner ()
 execCmd ExecOpts {..} =
     case eoExtra of
-        ExecOptsPlain -> do
-          withConfig $ do
-            stackRoot <- view stackRootL
-            withUserFileLock stackRoot $ \lk -> do
-              Docker.reexecWithOptionalContainer
-                    -- Unlock before transferring control away, whether using docker or not:
-                    (Just $ munlockFile lk)
-                    (pure Nothing) -- Unlocked already above.
-                    (withDefaultEnvConfigAndLock $ \buildLock -> do
-                        config <- view configL
-                        menv <- liftIO $ configProcessContextSettings config plainEnvSettings
-                        withProcessContext menv $ do
-                            (cmd, args) <- case (eoCmd, eoArgs) of
-                                (ExecCmd cmd, args) -> return (cmd, args)
-                                (ExecRun, args) -> getRunCmd args
-                                (ExecGhc, args) -> return ("ghc", args)
-                                (ExecRunGhc, args) -> return ("runghc", args)
-                            munlockFile buildLock
-
-                            -- FIXME this looks like it's running Nix
-                            -- at the wrong point in the pipeline
-                            config' <- view configL -- load up a second time to get the modified env
-                            runRIO config' $ Nix.reexecWithOptionalShell (exec cmd args))
+        ExecOptsPlain ->
+          withConfig $
+          withDefaultEnvConfigAndLock $ \buildLock -> do
+            config <- view configL
+            menv <- liftIO $ configProcessContextSettings config plainEnvSettings
+            withProcessContext menv $ do
+              (cmd, args) <-
+                case (eoCmd, eoArgs) of
+                  (ExecCmd cmd, args) -> return (cmd, args)
+                  (ExecRun, args) -> getRunCmd args
+                  (ExecGhc, args) -> return ("ghc", args)
+                  (ExecRunGhc, args) -> return ("runghc", args)
+              munlockFile buildLock
+              exec cmd args
         ExecOptsEmbellished {..} -> do
             let targets = concatMap words eoPackages
                 boptsCLI = defaultBuildOptsCLI
