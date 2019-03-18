@@ -669,8 +669,8 @@ uninstallCmd _ = do
 
 -- | Unpack packages to the filesystem
 unpackCmd :: ([String], Maybe Text) -> RIO Runner ()
-unpackCmd (names, Nothing) = unpackCmd (names, Just ".")
-unpackCmd (names, Just dstPath) = withConfigAndLock $ do
+unpackCmd (names, mdstPath) = withConfig $ do
+    let dstPath = fromMaybe "." mdstPath
     mresolver <- view $ globalOptsL.to globalResolver
     mSnapshotDef <- mapM (makeConcreteResolver >=> flip loadResolver Nothing) mresolver
     dstPath' <- resolveDir' $ T.unpack dstPath
@@ -678,7 +678,7 @@ unpackCmd (names, Just dstPath) = withConfigAndLock $ do
 
 -- | Update the package index
 updateCmd :: () -> RIO Runner ()
-updateCmd () = withConfigAndLock (void (updateHackageIndex Nothing))
+updateCmd () = withConfig (void (updateHackageIndex Nothing))
 
 upgradeCmd :: UpgradeOpts -> RIO Runner ()
 upgradeCmd upgradeOpts' = do
@@ -983,7 +983,7 @@ newCmd (newOpts,initOpts) =
 
 -- | List the available templates.
 templatesCmd :: () -> RIO Runner ()
-templatesCmd _ = withConfigAndLock templatesHelp
+templatesCmd () = templatesHelp
 
 -- | Fix up extra-deps for a project
 solverCmd :: Bool -- ^ modify stack.yaml automatically?

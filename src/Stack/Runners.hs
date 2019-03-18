@@ -6,7 +6,6 @@
 -- | Utilities for running stack commands.
 module Stack.Runners
     ( withGlobalConfigAndLock
-    , withConfigAndLock
     , withEnvConfigAndLock
     , withDefaultEnvConfigAndLock
     , withBuildConfig
@@ -73,17 +72,6 @@ withUserFileLock dir act = withRunInIO $ \run -> do
                                             logError "Lock acquired, proceeding."
                                             act $ Just lk))
         else run $ act Nothing
-
-withConfigAndLock
-    :: RIO Config ()
-    -> RIO Runner ()
-withConfigAndLock inner = withConfig $ do
-    stackRoot <- view stackRootL
-    withUserFileLock stackRoot $ \lk ->
-      Docker.reexecWithOptionalContainer
-        Nothing
-        (pure lk)
-        inner
 
 -- | Loads global config, ignoring any configuration which would be
 -- loaded due to $PWD.
