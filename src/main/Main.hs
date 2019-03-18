@@ -607,19 +607,16 @@ setupCmd :: SetupCmdOpts -> RIO Runner ()
 setupCmd sco@SetupCmdOpts{..} = withConfig $ do
   stackRoot <- view stackRootL
   withUserFileLock stackRoot $ \lk ->
-    Docker.reexecWithOptionalContainer
-      Nothing
-      (pure lk)
-      (Nix.reexecWithOptionalShell $ do
-        (wantedCompiler, compilerCheck, mstack) <-
-          case scoCompilerVersion of
-            Just v -> return (v, MatchMinor, Nothing)
-            Nothing -> withBuildConfig $ (,,)
-              <$> view wantedCompilerVersionL
-              <*> view (configL.to configCompilerCheck)
-              <*> (Just <$> view stackYamlL)
-        setup sco wantedCompiler compilerCheck mstack
-      )
+    Docker.reexecWithOptionalContainer Nothing lk $
+    Nix.reexecWithOptionalShell $ do
+      (wantedCompiler, compilerCheck, mstack) <-
+        case scoCompilerVersion of
+          Just v -> return (v, MatchMinor, Nothing)
+          Nothing -> withBuildConfig $ (,,)
+            <$> view wantedCompilerVersionL
+            <*> view (configL.to configCompilerCheck)
+            <*> (Just <$> view stackYamlL)
+      setup sco wantedCompiler compilerCheck mstack
 
 cleanCmd :: CleanOpts -> RIO Runner ()
 cleanCmd = withConfig . withBuildConfig . clean

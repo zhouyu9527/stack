@@ -186,7 +186,7 @@ getCmdArgs docker imageInfo isRemoteDocker = do
 reexecWithOptionalContainer
     :: HasConfig env
     => Maybe (RIO env ())
-    -> IO (Maybe FileLock)
+    -> Maybe FileLock
     -> RIO env a
     -> RIO env a
 reexecWithOptionalContainer mbefore mrelease inner =
@@ -199,7 +199,7 @@ reexecWithOptionalContainer mbefore mrelease inner =
         | not (dockerEnable (configDocker config)) ->
             fromMaybeAction mbefore *> inner
         | otherwise ->
-            do liftIO $ mrelease >>= traverse_ unlockFile
+            do liftIO $ traverse_ unlockFile mrelease
                runContainerAndExit
                  (fromMaybeAction mbefore)
   where
