@@ -80,7 +80,7 @@ setupParser = SetupCmdOpts
             Right x -> return x
 
 setup
-    :: (HasConfig env, HasGHCVariant env)
+    :: HasConfig env
     => SetupCmdOpts
     -> WantedCompiler
     -> VersionCheck

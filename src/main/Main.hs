@@ -606,24 +606,20 @@ interpreterHandler currentDir args f = do
 setupCmd :: SetupCmdOpts -> RIO Runner ()
 setupCmd sco@SetupCmdOpts{..} = withConfig $ do
   stackRoot <- view stackRootL
-  withUserFileLock stackRoot $ \lk -> do
-    config <- ask
+  withUserFileLock stackRoot $ \lk ->
     Docker.reexecWithOptionalContainer
-          Nothing
-          (pure lk)
-          (runRIO config $
-           Nix.reexecWithOptionalShell $ do
-           (wantedCompiler, compilerCheck, mstack) <-
-               case scoCompilerVersion of
-                   Just v -> return (v, MatchMinor, Nothing)
-                   Nothing -> do
-                       bc <- liftIO $ runRIO config loadBuildConfig
-                       return ( view wantedCompilerVersionL bc
-                              , configCompilerCheck config
-                              , Just $ view stackYamlL bc
-                              )
-           runRIO config $ setup sco wantedCompiler compilerCheck mstack
-           )
+      Nothing
+      (pure lk)
+      (Nix.reexecWithOptionalShell $ do
+        (wantedCompiler, compilerCheck, mstack) <-
+          case scoCompilerVersion of
+            Just v -> return (v, MatchMinor, Nothing)
+            Nothing -> withBuildConfig $ (,,)
+              <$> view wantedCompilerVersionL
+              <*> view (configL.to configCompilerCheck)
+              <*> (Just <$> view stackYamlL)
+        setup sco wantedCompiler compilerCheck mstack
+      )
 
 cleanCmd :: CleanOpts -> RIO Runner ()
 cleanCmd = withConfig . withBuildConfig . clean
