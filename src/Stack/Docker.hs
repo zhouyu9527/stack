@@ -185,26 +185,21 @@ getCmdArgs docker imageInfo isRemoteDocker = do
 -- nothing but an manager for the call into docker and thus may not hold the lock.
 reexecWithOptionalContainer
     :: HasConfig env
-    => Maybe (RIO env ())
-    -> Maybe FileLock
+    => Maybe FileLock
     -> RIO env a
     -> RIO env a
-reexecWithOptionalContainer mbefore mrelease inner =
+reexecWithOptionalContainer mrelease inner =
   do config <- view configL
      inContainer <- getInContainer
      isReExec <- view reExecL
-     if | inContainer && not isReExec && isJust mbefore ->
+     if | inContainer && not isReExec ->
             throwIO OnlyOnHostException
         | inContainer -> inner
         | not (dockerEnable (configDocker config)) ->
-            fromMaybeAction mbefore *> inner
+            inner
         | otherwise ->
             do liftIO $ traverse_ unlockFile mrelease
                runContainerAndExit
-                 (fromMaybeAction mbefore)
-  where
-    fromMaybeAction Nothing = return ()
-    fromMaybeAction (Just hook) = hook
 
 -- | Error if running in a container.
 preventInContainer :: MonadIO m => m () -> m ()
@@ -215,11 +210,8 @@ preventInContainer inner =
         else inner
 
 -- | Run a command in a new Docker container, then exit the process.
-runContainerAndExit
-  :: HasConfig env
-  => RIO env ()  -- ^ Action to run before
-  -> RIO env void
-runContainerAndExit before = do
+runContainerAndExit :: HasConfig env => RIO env void
+runContainerAndExit = do
      config <- view configL
      let docker = configDocker config
      checkDockerVersion docker
@@ -332,7 +324,6 @@ runContainerAndExit before = do
          ,[image]
          ,[cmnd]
          ,args])
-     before
 -- MSS 2018-08-30 can the CPP below be removed entirely, and instead exec the
 -- `docker` process so that it can handle the signals directly?
 #ifndef WINDOWS

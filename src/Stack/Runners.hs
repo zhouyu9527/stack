@@ -122,7 +122,7 @@ withEnvConfigAndLock
 withEnvConfigAndLock needTargets boptsCLI inner = do
     config <- ask
     withUserFileLock (view stackRootL config) $ \lkUser ->
-      Docker.reexecWithOptionalContainer Nothing lkUser $
+      Docker.reexecWithOptionalContainer lkUser $
       Nix.reexecWithOptionalShell $ withBuildConfig $ do
         envConfig <- setupEnv needTargets boptsCLI Nothing
         runRIO envConfig $ do

@@ -607,7 +607,7 @@ setupCmd :: SetupCmdOpts -> RIO Runner ()
 setupCmd sco@SetupCmdOpts{..} = withConfig $ do
   stackRoot <- view stackRootL
   withUserFileLock stackRoot $ \lk ->
-    Docker.reexecWithOptionalContainer Nothing lk $
+    Docker.reexecWithOptionalContainer lk $
     Nix.reexecWithOptionalShell $ do
       (wantedCompiler, compilerCheck, mstack) <-
         case scoCompilerVersion of
