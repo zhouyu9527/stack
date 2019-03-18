@@ -626,7 +626,7 @@ setupCmd sco@SetupCmdOpts{..} = withConfig $ do
            )
 
 cleanCmd :: CleanOpts -> RIO Runner ()
-cleanCmd = withConfig . withCleanConfig . clean
+cleanCmd = withConfig . withBuildConfig . clean
 
 -- | Helper for build and install commands
 buildCmd :: BuildOptsCLI -> RIO Runner ()

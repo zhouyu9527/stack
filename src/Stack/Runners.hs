@@ -9,7 +9,6 @@ module Stack.Runners
     , withEnvConfigAndLock
     , withDefaultEnvConfigAndLock
     , withBuildConfig
-    , withCleanConfig
     , withEnvConfig
     , withDefaultEnvConfig
     , withConfig
@@ -107,24 +106,6 @@ withDefaultEnvConfigAndLock
     :: (Maybe FileLock -> RIO EnvConfig a)
     -> RIO Config a
 withDefaultEnvConfigAndLock = withEnvConfigAndLock AllowNoTargets defaultBuildOptsCLI
-
--- | A runner specially built for the "stack clean" use case. For some
--- reason (hysterical raisins?), all of the functions in this module
--- which say BuildConfig actually work on an EnvConfig, while the
--- clean command legitimately only needs a BuildConfig. At some point
--- in the future, we could consider renaming everything for more
--- consistency.
---
--- /NOTE/ This command always runs outside of the Docker environment,
--- since it does not need to run any commands to get information on
--- the project. This is a change as of #4480. For previous behavior,
--- see issue #2010.
-withCleanConfig :: RIO BuildConfig a -> RIO Config a
-withCleanConfig inner = do
-    root <- view stackRootL
-    withUserFileLock root $ \_lk0 -> do
-      bconfig <- loadBuildConfig
-      runRIO bconfig inner
 
 withBuildConfig :: RIO BuildConfig a -> RIO Config a
 withBuildConfig inner = do
