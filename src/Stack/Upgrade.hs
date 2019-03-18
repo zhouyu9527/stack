@@ -227,14 +227,10 @@ sourceUpgrade builtHash (SourceOpts gitRepo) =
                     pure $ Just dir
 
     forM_ mdir $ \dir ->
-      local (set stackYamlLocL (SYLOverride $ dir </> stackDotYaml)) $
-      withBuildConfig $ do
+      local (set stackYamlLocL (SYLOverride $ dir </> stackDotYaml)) $ do
         let boptsCLI = defaultBuildOptsCLI
                 { boptsCLITargets = ["stack"]
                 }
-        localPrograms <- view $ configL.to configLocalPrograms
-        envConfig1 <- setupEnv AllowNoTargets boptsCLI $ Just $
-            "Try rerunning with --install-ghc to install the correct GHC into " <>
-            T.pack (toFilePath localPrograms)
-        runRIO (set (buildOptsL.buildOptsInstallExesL) True envConfig1) $
-            build Nothing Nothing
+        withEnvConfig NeedTargets boptsCLI $
+          local (set (buildOptsL.buildOptsInstallExesL) True) $
+          build Nothing Nothing
