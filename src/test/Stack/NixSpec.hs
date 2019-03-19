@@ -7,7 +7,6 @@ import Data.Maybe (fromJust)
 import Options.Applicative
 import Path
 import Prelude (writeFile)
-import Stack.Config
 import Stack.Config.Nix
 import Stack.Constants
 import Stack.Options.GlobalParser (globalOptsFromMonoid)
@@ -45,7 +44,7 @@ spec = beforeAll setup $ do
       loadConfig' cmdLineArgs inner = do
         globalOpts <- globalOptsFromMonoid False mempty { globalMonoidConfigMonoid = cmdLineArgs }
         withRunnerGlobal globalOpts { globalLogLevel = LevelDebug } $
-          loadConfig (liftIO . inner)
+          withConfig (ask >>= liftIO . inner)
       inTempDir test = do
         currentDirectory <- getCurrentDirectory
         withSystemTempDirectory "Stack_ConfigSpec" $ \tempDir -> do
