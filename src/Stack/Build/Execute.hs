@@ -87,6 +87,7 @@ import           System.Environment (getExecutablePath)
 import           System.Exit (ExitCode (..))
 import qualified System.FilePath as FP
 import           System.IO (stderr, stdout)
+import           System.Permissions (runAndKillProcess)
 import           System.PosixCompat.Files (createLink, modificationTime, getFileStatus)
 import           System.PosixCompat.Time (epochTime)
 import           RIO.PrettyPrint
@@ -1891,7 +1892,7 @@ singleTest topts testsToRun ac ee task installedMap = do
                                    $ output setStdout
                                    $ output setStderr
                                      pc0
-                            runProcess pc
+                            runAndKillProcess pc
                         -- Add a trailing newline, incase the test
                         -- output didn't finish with a newline.
                         case outputType of
