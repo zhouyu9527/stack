@@ -28,12 +28,10 @@ initStorage description migration fp inner = do
     runMigrationSilent migration
   forM_ migrates $ \mig -> logDebug $ "Migration executed: " <> display mig
 
-  withSqlitePoolInfo (sqinfo False) 1 $ \pool -> inner $ Storage
+  inner $ Storage
     { withStorage_ = \action -> do
         logInfo "withStorage_ called again"
-        a <- flip runSqlPool pool $ do
-               a <- action
-               pure a
+        a <- withSqliteConnInfo (sqinfo False) $ runReaderT action
         logInfo "Closing the connection..."
         pure a
     , withWriteLock_ = withWriteLock fp
