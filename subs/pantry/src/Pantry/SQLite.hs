@@ -29,8 +29,8 @@ initStorage description migration fp inner = do
   forM_ migrates $ \mig -> logDebug $ "Migration executed: " <> display mig
 
   inner $ Storage
-    { withStorage_ = withSqliteConnInfo (sqinfo False) . runSqlConn
-    , withWriteLock_ = withWriteLock fp
+    { withStorage_ = withWriteLock fp . withSqliteConnInfo (sqinfo False) . runSqlConn
+    , withWriteLock_ = id
     }
   where
     wrapMigrationFailure = handle (throwIO . MigrationFailure description fp)
