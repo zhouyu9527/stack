@@ -79,9 +79,7 @@ updateHackageIndex
   :: (HasPantryConfig env, HasLogFunc env)
   => Maybe Utf8Builder -- ^ reason for updating, if any
   -> RIO env DidUpdateOccur
-updateHackageIndex mreason = do
-  storage <- view $ pantryConfigL.to pcStorage
-  gateUpdate $ withWriteLock_ storage $ do
+updateHackageIndex mreason = gateUpdate $ do
     for_ mreason logInfo
     pc <- view pantryConfigL
     let HackageSecurityConfig keyIds threshold url ignoreExpiry = pcHackageSecurity pc
