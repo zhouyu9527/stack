@@ -31,7 +31,7 @@ initStorage description migration fp inner = do
   inner $ Storage
     { withStorage_ = \action -> do
         logInfo "withStorage_ called again"
-        a <- withSqliteConnInfo (sqinfo False) $ runReaderT action
+        a <- withSqlitePoolInfo (sqinfo False) 1 $ runSqlPool action
         logInfo "Closing the connection..."
         pure a
     , withWriteLock_ = withWriteLock fp
