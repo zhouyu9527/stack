@@ -51,7 +51,7 @@ initStorage description migration fp inner = do
            -- need to waste time reenabling WAL. Skipping this also
            -- allows us to get slightly more meaningful error messages
            -- if we run into the SQLITE_BUSY bug again.
-           $ set walEnabled isMigration
+           -- $ set walEnabled isMigration
 
            $ mkSqliteConnectionInfo (fromString $ toFilePath fp)
 
