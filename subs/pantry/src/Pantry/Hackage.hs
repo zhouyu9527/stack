@@ -218,7 +218,10 @@ populateCache fp offset = withBinaryFile (toFilePath fp) ReadMode $ \h -> do
             | filename == "package.json" ->
                 sinkLazy >>= lift . addJSON name version
             | filename == unSafeFilePath (cabalFileName name) -> do
-                (BL.toStrict <$> sinkLazy) >>= lift . addCabal name version
+                lift $ lift $ logInfo $ "Getting BS for cabal file " <> displayShow (name, version)
+                bs <- BL.toStrict <$> sinkLazy
+                lift $ lift $ logInfo "Adding cabal file"
+                lift $ addCabal name version bs
 
                 count <- readIORef counter
                 let count' = count + 1
@@ -249,8 +252,10 @@ populateCache fp offset = withBinaryFile (toFilePath fp) ReadMode $ \h -> do
 
     addCabal name version bs = do
       (blobTableId, _blobKey) <- storeBlob bs
+      lift $ logInfo "Stored blob"
 
       storeHackageRevision name version blobTableId
+      lift $ logInfo "Stored Hackage revision"
 
     breakSlash x
         | T.null z = Nothing
