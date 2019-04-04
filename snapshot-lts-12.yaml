@@ -8,3 +8,9 @@ packages:
 - infer-license-0.2.0@rev:0 #for hpack-0.31
 - tar-conduit-0.3.1@rev:0
 - yaml-0.10.4.0@rev:0 #for hpack-0.31
+
+- github: yesodweb/persistent
+  commit: efbeabf77124085f3a58b58f73ee1bdbc88502a7
+  subdirs:
+  - persistent
+  - persistent-sqlite

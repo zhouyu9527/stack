@@ -1,2 +1,8 @@
 resolver: nightly-2018-12-01
 name: snapshot-for-building-stack-with-ghc-8.6.2
+
+- github: yesodweb/persistent
+  commit: efbeabf77124085f3a58b58f73ee1bdbc88502a7
+  subdirs:
+  - persistent
+  - persistent-sqlite
