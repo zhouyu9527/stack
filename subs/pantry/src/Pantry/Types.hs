@@ -783,7 +783,7 @@ data PantryException
   | PackageVersionParseFail !Text
   | InvalidCabalFilePath !(Path Abs File)
   | DuplicatePackageNames !Utf8Builder ![(PackageName, [RawPackageLocationImmutable])]
-  | MigrationFailure !Text !(Path Abs File) !SqliteException
+  | MigrationFailure !Text !(Path Abs File) !SomeException
 
   deriving Typeable
 instance Exception PantryException where

@@ -33,7 +33,7 @@ initStorage description migration fp inner = do
     , withWriteLock_ = id
     }
   where
-    wrapMigrationFailure = handle (throwIO . MigrationFailure description fp)
+    wrapMigrationFailure = handleAny (throwIO . MigrationFailure description fp)
 
     sqinfo isMigration
            = set extraPragmas ["PRAGMA busy_timeout=2000;"]
