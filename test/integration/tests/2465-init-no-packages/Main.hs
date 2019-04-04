@@ -8,4 +8,3 @@ main = do
   stack ["init", "--resolver", "ghc-8.2.2"]
   exists <- doesFileExist "stack.yaml"
   unless exists $ error "stack.yaml not created!"
-  stack ["build"]
