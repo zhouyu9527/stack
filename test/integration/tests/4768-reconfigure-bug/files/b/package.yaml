@@ -1,0 +1,9 @@
+name: b
+version: 0
+
+dependencies:
+- base
+- a
+
+library:
+  source-dirs: src
