@@ -1,0 +1,34 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 45e12cd8dc7532fcc1440ab420276120da894d3351434123142a41c90ce40342
+
+name:           umlaut
+version:        0.0.0
+build-type:     Simple
+
+library
+  exposed-modules:
+      Lib
+      Täst
+  other-modules:
+      Paths_umlaut
+  hs-source-dirs:
+      ./.
+  build-depends:
+      base
+  default-language: Haskell2010
+
+executable exe
+  main-is: Main.hs
+  other-modules:
+      Paths_umlaut
+  hs-source-dirs:
+      app
+  build-depends:
+      base
+    , umlaut
+  default-language: Haskell2010
