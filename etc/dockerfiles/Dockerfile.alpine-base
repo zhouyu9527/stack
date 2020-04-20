@@ -1,0 +1,7 @@
+FROM fpco/alpine-haskell-stack@sha256:bf1050a24b0a9d309ec98418e578ddce474dd60542da8f9367f36e4ed6498e8e
+
+RUN stack update
+RUN stack setup --resolver ghc-8.8.3
+
+COPY . /src
+RUN stack build --stack-yaml /src/stack-ghc-88.yaml --only-snapshot

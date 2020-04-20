@@ -1,0 +1,23 @@
+name: Alpine base image
+
+on:
+  push:
+    branches: [alpine-base]
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Log into Github registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login docker.pkg.github.com -u ${{ github.actor }} --password-stdin
+
+      - name: Alpine base image
+        run: |
+          IMAGE_ID=docker.pkg.github.com/${{ github.repository }}/alpine-build:$GITHUB_SHA
+          docker build . -f etc/dockerfiles/Dockerfile.alpine-base --tag $IMAGE_ID
+          docker push $IMAGE_ID
+          echo Pushed new base build image $IMAGE_ID
