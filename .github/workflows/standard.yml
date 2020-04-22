@@ -30,9 +30,10 @@ jobs:
 
     strategy:
       matrix:
-        - stack_yaml: stack.yaml
-          image: docker.pkg.github.com/commercialhaskell/stack/base-alpine:ce38a8b17b8aeeb95f03833c6d3c1623b0312fee
-          stack_args: --flat stack:static
+        target:
+          - stack_yaml: stack.yaml
+            image: docker.pkg.github.com/commercialhaskell/stack/base-alpine:ce38a8b17b8aeeb95f03833c6d3c1623b0312fee
+            stack_args: --flat stack:static
 
     steps:
       - uses: actions/checkout@v2
@@ -42,4 +43,4 @@ jobs:
 
       - name: Test
         run: |
-          docker run -v $(pwd):/src "${{ matrix.image }}" stack --stack-yaml "/src/${{ matrix.stack_yaml }}" test --haddock --no-haddock-deps ${{ matrix.stack_args }} --allow-different-user
+          docker run -v $(pwd):/src "${{ matrix.target.image }}" stack --stack-yaml "/src/${{ matrix.target.stack_yaml }}" test --haddock --no-haddock-deps ${{ matrix.target.stack_args }} --allow-different-user
