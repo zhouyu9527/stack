@@ -1,4 +1,4 @@
-name: Style
+name: Linux
 
 on:
   push:
@@ -16,6 +16,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+
+      - name: Log into Github registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login docker.pkg.github.com -u ${{ github.actor }} --password-stdin
 
       - name: Test
         run: |
