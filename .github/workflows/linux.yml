@@ -1,0 +1,22 @@
+name: Style
+
+on:
+  push:
+    branches:
+    - master
+    - stable
+    - rc/*
+    - action-testing # FIXME remove
+  pull_request: {}
+  
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Test
+        run: |
+          docker run -v $(pwd):/src docker.pkg.github.com/commercialhaskell/stack/base-alpine:ce38a8b17b8aeeb95f03833c6d3c1623b0312fee stack --stack-yaml /src/stack.yaml test --haddock --no-haddock-deps --flag stack:static
