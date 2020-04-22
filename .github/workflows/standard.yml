@@ -1,0 +1,45 @@
+name: Standard
+
+on:
+  push:
+    branches:
+    - master
+    - stable
+    - rc/*
+    - action-testing # FIXME remove
+  pull_request: {}
+  
+
+jobs:
+  style:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Style
+        run: |
+          ./etc/scripts/get-hlint.sh
+          export PATH="$(pwd)"/hlint:$PATH
+          hlint src/
+          hlint src/ --cpp-define=WINDOWS=1
+          hlint test/ --cpp-simple
+
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        - stack_yaml: stack.yaml
+          image: docker.pkg.github.com/commercialhaskell/stack/base-alpine:ce38a8b17b8aeeb95f03833c6d3c1623b0312fee
+          stack_args: --flat stack:static
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Log into Github registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login docker.pkg.github.com -u ${{ github.actor }} --password-stdin
+
+      - name: Test
+        run: |
+          docker run -v $(pwd):/src "${{ matrix.image }}" stack --stack-yaml "/src/${{ matrix.stack_yaml }}" test --haddock --no-haddock-deps ${{ matrix.stack_args }} --allow-different-user
