@@ -1,0 +1,26 @@
+name: Style
+
+on:
+  push:
+    branches:
+    - master
+    - stable
+    - rc/*
+    - action-testing # FIXME remove
+  pull_request: {}
+  
+
+jobs:
+  style:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Style
+        run: |
+          ./etc/scripts/get-hlint.sh
+          export PATH="$(pwd)"/hlint:$PATH
+          hlint src/
+          hlint src/ --cpp-define=WINDOWS=1
+          hlint test/ --cpp-simple
