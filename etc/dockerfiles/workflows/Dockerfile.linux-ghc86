@@ -1,0 +1,9 @@
+FROM fpco/pid1:18.04
+
+RUN apt-get update && \
+    apt-get install -y curl && \
+    curl -sSL https://get.haskellstack.org/ | sh
+
+COPY . /tmp/src
+RUN stack build --stack-yaml /tmp/src/stack-ghc-86.yaml --only-snapshot --test --bench && \
+    rm -rf /tmp/src
