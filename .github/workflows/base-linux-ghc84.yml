@@ -1,0 +1,23 @@
+name: Base Linux GHC 8.4 image
+
+on:
+  push:
+    branches: [base-linux-ghc84]
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Log into Github registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login docker.pkg.github.com -u ${{ github.actor }} --password-stdin
+
+      - name: Build base Linux GHC 8.4 image
+        run: |
+          IMAGE_ID=docker.pkg.github.com/${{ github.repository }}/base-linux-ghc84:$GITHUB_SHA
+          docker build . -f etc/dockerfiles/workflows/Dockerfile.linux-ghc84 --tag $IMAGE_ID
+          docker push $IMAGE_ID
+          echo Pushed new base image $IMAGE_ID
