@@ -2,3 +2,4 @@
 /cabal*.config
 /dist
 /target
+/.stack-work
