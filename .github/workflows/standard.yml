@@ -57,7 +57,13 @@ jobs:
 
       - name: Test
         run: |
-          docker run -v $(pwd):/src "${{ matrix.image }}" stack --stack-yaml "/src/${{ matrix.stack_yaml }}" test --haddock --no-haddock-deps ${{ matrix.stack_args }} --allow-different-user
+          mkdir -p _release/bin
+          docker run -v $(pwd):/src "${{ matrix.image }}" stack --stack-yaml "/src/${{ matrix.stack_yaml }}" test --haddock --no-haddock-deps ${{ matrix.stack_args }} --allow-different-user --copy-bins --local-bin-path /src/_release/bin
+
+      - uses: actions/upload-artifact@v1
+        with:
+          name: binary
+          path: _release/bin/stack
 
   MacOS:
     runs-on: macOS-latest
@@ -77,7 +83,12 @@ jobs:
         run: |
           export STACK_ROOT=$(pwd)/.stack-root
           curl -sSL https://get.haskellstack.org/ | sh
-          stack test --haddock --no-haddock-deps
+          stack test --haddock --no-haddock-deps --local-bin-path _release/bin --copy-bins
+
+      - uses: actions/upload-artifact@v1
+        with:
+          name: binary
+          path: _release/bin/stack
 
   Windows:
     runs-on: windows-latest
@@ -99,4 +110,9 @@ jobs:
           export STACK_ROOT=$(pwd)/.stack-root
           curl -sSkL http://www.stackage.org/stack/windows-x86_64 -o /usr/bin/stack.zip
           unzip -o /usr/bin/stack.zip -d /usr/bin/
-          stack test --haddock --no-haddock-deps
+          stack test --haddock --no-haddock-deps --local-bin-path _release/bin --copy-bins
+
+      - uses: actions/upload-artifact@v1
+        with:
+          name: binary
+          path: _release/bin/stack
