@@ -57,7 +57,7 @@ jobs:
 
       - name: Test
         run: |
-          docker run -v $(pwd):/src "${{ matrix.target.image }}" stack --stack-yaml "/src/${{ matrix.target.stack_yaml }}" test --haddock --no-haddock-deps ${{ matrix.target.stack_args }} --allow-different-user
+          docker run -v $(pwd):/src "${{ matrix.image }}" stack --stack-yaml "/src/${{ matrix.stack_yaml }}" test --haddock --no-haddock-deps ${{ matrix.stack_args }} --allow-different-user
 
   MacOS:
     runs-on: macOS-latest
