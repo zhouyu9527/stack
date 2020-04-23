@@ -35,7 +35,7 @@ jobs:
           - target: Alpine
             stack_yaml: stack.yaml
             image: docker.pkg.github.com/commercialhaskell/stack/base-alpine:df1f913791018a881a0dc3c3e74e6222b42047d4
-            stack_args: --flag stack:static --ghc-options -fsplit-sections
+            stack_args: --flag stack:static --ghc-options -split-sections
           - target: GHC 8.4
             stack_yaml: stack-ghc-84.yaml
             image: docker.pkg.github.com/commercialhaskell/stack/base-linux-ghc84:88105b82ccfdb26b8ec0a64b316c3a943a67befa
