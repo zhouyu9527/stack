@@ -29,22 +29,23 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
-        target: ["Alpine", "GHC 8.4", "GHC 8.6", "GHC 8.8"]
+        target: ["alpine", "ghc-8.4", "ghc-8.6", "ghc-8.8"]
         include:
-          - target: Alpine
+          - target: alpine
             stack_yaml: stack.yaml
             image: docker.pkg.github.com/commercialhaskell/stack/base-alpine:df1f913791018a881a0dc3c3e74e6222b42047d4
             stack_args: --flag stack:static --ghc-options -split-sections
-          - target: GHC 8.4
+          - target: ghc-8.4
             stack_yaml: stack-ghc-84.yaml
             image: docker.pkg.github.com/commercialhaskell/stack/base-linux-ghc84:88105b82ccfdb26b8ec0a64b316c3a943a67befa
             stack_args: ""
-          - target: GHC 8.6
+          - target: ghc-8.6
             stack_yaml: stack-ghc-86.yaml
             image: docker.pkg.github.com/commercialhaskell/stack/base-linux-ghc86:f94bba6fcf3a5016b54b6048f7203ad83fd1c1a3
             stack_args: --pedantic
-          - target: GHC 8.8
+          - target: ghc-8.8
             stack_yaml: stack-ghc-88.yaml
             image: docker.pkg.github.com/commercialhaskell/stack/base-linux-ghc88:f94bba6fcf3a5016b54b6048f7203ad83fd1c1a3
             stack_args: ""
@@ -62,7 +63,7 @@ jobs:
 
       - uses: actions/upload-artifact@v1
         with:
-          name: binary
+          name: "linux-${{ matrix.target }}"
           path: _release/bin/stack
 
   MacOS:
@@ -87,7 +88,7 @@ jobs:
 
       - uses: actions/upload-artifact@v1
         with:
-          name: binary
+          name: macos
           path: _release/bin/stack
 
   Windows:
@@ -114,5 +115,5 @@ jobs:
 
       - uses: actions/upload-artifact@v1
         with:
-          name: binary
+          name: windows
           path: _release/bin/stack.exe
