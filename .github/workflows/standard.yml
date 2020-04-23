@@ -11,7 +11,7 @@ on:
   
 
 jobs:
-  style:
+  Style:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,7 +25,7 @@ jobs:
           hlint src/ --cpp-define=WINDOWS=1
           hlint test/ --cpp-simple
 
-  test:
+  Linux:
     runs-on: ubuntu-latest
 
     strategy:
@@ -53,3 +53,23 @@ jobs:
       - name: Test
         run: |
           docker run -v $(pwd):/src "${{ matrix.target.image }}" stack --stack-yaml "/src/${{ matrix.target.stack_yaml }}" test --haddock --no-haddock-deps ${{ matrix.target.stack_args }} --allow-different-user
+
+  MacOS:
+    runs-on: macOS-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache .stack-root
+        uses: actions/cache@v1
+        env:
+          cache-name: stack-root
+        with:
+          path: .stack-root
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('stack.yaml') }}
+
+      - name: Test
+        run: |
+          export STACK_ROOT=.stack-root
+          curl -sSL https://get.haskellstack.org/ | sh
+          stack test --haddock --no-haddock-deps
