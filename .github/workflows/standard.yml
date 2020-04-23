@@ -34,7 +34,7 @@ jobs:
         include:
           - target: Alpine
             stack_yaml: stack.yaml
-            image: docker.pkg.github.com/commercialhaskell/stack/base-alpine:ce38a8b17b8aeeb95f03833c6d3c1623b0312fee
+            image: docker.pkg.github.com/commercialhaskell/stack/base-alpine:df1f913791018a881a0dc3c3e74e6222b42047d4
             stack_args: --flag stack:static
           - target: GHC 8.4
             stack_yaml: stack-ghc-84.yaml
