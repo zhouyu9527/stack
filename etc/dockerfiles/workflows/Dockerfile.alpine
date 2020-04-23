@@ -44,4 +44,4 @@ RUN echo "Downloading and installing stack" &&\
 
 # Build the dependencies for the project
 COPY . /tmp/src
-RUN stack build --test --bench --only-snapshot --stack-yaml /tmp/src/stack.yaml && rm -rf /tmp/src
+RUN stack build --test --bench --only-snapshot --stack-yaml /tmp/src/stack.yaml --ghc-options=-fsplit-objects && rm -rf /tmp/src
