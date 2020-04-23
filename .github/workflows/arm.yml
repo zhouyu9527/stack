@@ -22,4 +22,4 @@ jobs:
             apt-get update
             apt-get install -y curl
             curl -sSL https://get.haskellstack.org/ | sh
-            stack test --haddock --no-haddock-deps
+            stack test --haddock --no-haddock-deps --allow-different-user
