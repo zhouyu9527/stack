@@ -1,0 +1,24 @@
+name: ARM
+
+on:
+  push:
+    branches:
+    - action-testing-arm
+  
+
+jobs:
+  armv7:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: uraimo/run-on-arch-action@v1.0.8
+        id: runcmd
+        with:
+          architecture: armv7
+          distribution: ubuntu18.04
+          run: |
+            export STACK_ROOT=$(pwd)/.stack-root
+            curl -sSL https://get.haskellstack.org/ | sh
+            stack test --haddock --no-haddock-deps
