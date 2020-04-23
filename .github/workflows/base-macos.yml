@@ -13,13 +13,13 @@ jobs:
 
       - name: Build base macOS dependencies
         run: |
-          export STACK_ROOT=/stack-root
+          export STACK_ROOT=.stack-root
           curl -sSL https://get.haskellstack.org/ | sh
           stack build --only-snapshot --test --bench
 
       - name: Package up stack root artifact
         run: |
-          tar czf stack-root.tar.gz /stack-root
+          tar czf stack-root.tar.gz .stack-root
 
       - name: Upload stack root artifact
         uses: actions/upload-artifact@v1
