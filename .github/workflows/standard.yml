@@ -72,13 +72,22 @@ jobs:
           path: .stack-root
           key: ${{ runner.os }}-static-build-${{ env.cache-name }}-${{ hashFiles('stack.yaml') }}
 
+      - name: Install Nix
+        run: |
+          (for i in {1..5}; do bash <(curl https://nixos.org/nix/install) && exit 0; done; exit 1)
+          . ~/.nix-profile/etc/profile.d/nix.sh
+          nix-channel --add https://nixos.org/channels/nixos-19.09 nixpkgs
+          nix-channel --update # Get GHC 8.2.2
+
       - name: Test
         run: |
           set -ex
           export STACK_ROOT=$(pwd)/.stack-root
           curl -sSL https://get.haskellstack.org/ | sh -s - -f
-          stack etc/scripts/release.hs check --alpine
-          stack etc/scripts/release.hs build --alpine
+
+          ALPINE_IMAGE=fpco/alpine-haskell-stack@sha256:49e7e15f3b1d3f882ba5bb701463b1d508fbf40e5aafce6ea31acd210da570ba
+          stack etc/scripts/release.hs check --alpine $ALPINE_IMAGE
+          stack etc/scripts/release.hs build --alpine $ALPINE_IMAGE
 
       - uses: actions/upload-artifact@v1
         with:
@@ -125,6 +134,11 @@ jobs:
         with:
           path: .stack-root
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('stack.yaml') }}
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis-unicode -y
 
       - name: Test
         shell: bash

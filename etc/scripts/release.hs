@@ -140,10 +140,17 @@ options =
     , Option "" [noTestHaddocksOptName] (NoArg $ Right $ \g -> g{gTestHaddocks = False})
         "Disable testing building haddocks."
     , Option "" [alpineOptName]
-        (NoArg $ Right $ \g ->
+        (ReqArg (\img -> Right $ \g ->
           g{gBuildArgs =
               gBuildArgs g ++
-              ["--flag=stack:static", "--docker", "--system-ghc", "--no-install-ghc"]})
+              [ "--flag=stack:static"
+              , "--docker"
+              , "--docker-image"
+              , img
+              , "--system-ghc"
+              , "--no-install-ghc"
+              ]})
+            "DOCKER_IMAGE")
         "Build a static binary using Alpine Docker image."
     , Option "" [buildArgsOptName]
         (ReqArg
