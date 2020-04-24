@@ -131,6 +131,7 @@ jobs:
         run: |
           export STACK_ROOT=$(pwd)/.stack-root
           curl -sSkL http://www.stackage.org/stack/windows-x86_64 -o /usr/bin/stack.zip
+          unzip -o /usr/bin/stack.zip -d /usr/bin/
           stack etc/scripts/release.hs check
           stack etc/scripts/release.hs build
 
