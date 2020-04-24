@@ -85,6 +85,8 @@ jobs:
           export STACK_ROOT=$(pwd)/.stack-root
           curl -sSL https://get.haskellstack.org/ | sh -s - -f
 
+          . ~/.nix-profile/etc/profile.d/nix.sh
+
           ALPINE_IMAGE=fpco/alpine-haskell-stack@sha256:49e7e15f3b1d3f882ba5bb701463b1d508fbf40e5aafce6ea31acd210da570ba
           stack etc/scripts/release.hs check --alpine $ALPINE_IMAGE
           stack etc/scripts/release.hs build --alpine $ALPINE_IMAGE
