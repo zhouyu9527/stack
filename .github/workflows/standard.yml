@@ -55,7 +55,7 @@ jobs:
         run: |
           set -ex
           export STACK_ROOT=$(pwd)/.stack-root
-          curl -sL https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C /usr/local/bin
+          curl -sL https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C /usr/local/bin '*/stack'
           stack --stack-yaml ${{ matrix.stack_yaml }} test --haddock --no-haddock-deps
 
   Linux:
@@ -76,7 +76,7 @@ jobs:
         run: |
           set -ex
           export STACK_ROOT=$(pwd)/.stack-root
-          curl -sL https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C /usr/local/bin
+          curl -sL https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C /usr/local/bin '*/stack'
           stack etc/scripts/release.hs check --alpine
           stack etc/scripts/release.hs build --alpine
 
