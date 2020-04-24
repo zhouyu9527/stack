@@ -25,7 +25,7 @@ jobs:
           hlint src/ --cpp-define=WINDOWS=1
           hlint test/ --cpp-simple
 
-  GHC matrix:
+  MultiGHC:
     runs-on: ubuntu-latest
 
     strategy:
