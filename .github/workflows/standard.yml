@@ -25,46 +25,64 @@ jobs:
           hlint src/ --cpp-define=WINDOWS=1
           hlint test/ --cpp-simple
 
-  Linux:
+  GHC matrix:
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
-        target: ["alpine", "ghc-8.4", "ghc-8.6", "ghc-8.8"]
+        target: ["ghc-8.4", "ghc-8.6", "ghc-8.8"]
         include:
-          - target: alpine
-            stack_yaml: stack.yaml
-            image: docker.pkg.github.com/commercialhaskell/stack/base-alpine:df1f913791018a881a0dc3c3e74e6222b42047d4
-            stack_args: --flag stack:static --ghc-options -split-sections
           - target: ghc-8.4
             stack_yaml: stack-ghc-84.yaml
-            image: docker.pkg.github.com/commercialhaskell/stack/base-linux-ghc84:88105b82ccfdb26b8ec0a64b316c3a943a67befa
-            stack_args: ""
           - target: ghc-8.6
             stack_yaml: stack-ghc-86.yaml
-            image: docker.pkg.github.com/commercialhaskell/stack/base-linux-ghc86:f94bba6fcf3a5016b54b6048f7203ad83fd1c1a3
-            stack_args: --pedantic
           - target: ghc-8.8
             stack_yaml: stack-ghc-88.yaml
-            image: docker.pkg.github.com/commercialhaskell/stack/base-linux-ghc88:f94bba6fcf3a5016b54b6048f7203ad83fd1c1a3
-            stack_args: ""
 
     steps:
       - uses: actions/checkout@v2
 
-      - name: Log into Github registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login docker.pkg.github.com -u ${{ github.actor }} --password-stdin
+      - name: Cache .stack-root
+        uses: actions/cache@v1
+        env:
+          cache-name: stack-root
+        with:
+          path: .stack-root
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles(matrix.stack_yaml) }}
 
       - name: Test
         run: |
-          mkdir -p _release/bin
-          docker run -v $(pwd):/src "${{ matrix.image }}" stack --stack-yaml "/src/${{ matrix.stack_yaml }}" test --haddock --no-haddock-deps ${{ matrix.stack_args }} --allow-different-user --copy-bins --local-bin-path /src/_release/bin
+          set -ex
+          export STACK_ROOT=$(pwd)/.stack-root
+          stack --stack-yaml ${{ matrix.stack_yaml }} test --haddock --no-haddock-deps
+
+  Linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache .stack-root
+        uses: actions/cache@v1
+        env:
+          cache-name: stack-root
+        with:
+          path: .stack-root
+          key: ${{ runner.os }}-static-build-${{ env.cache-name }}-${{ hashFiles('stack.yaml') }}
+
+      - name: Test
+        run: |
+          set -ex
+          export STACK_ROOT=$(pwd)/.stack-root
+          curl -sSL https://get.haskellstack.org/ | sh
+          stack etc/scripts/release.hs check --alpine
+          stack etc/scripts/release.hs build --alpine
 
       - uses: actions/upload-artifact@v1
         with:
-          name: "linux-${{ matrix.target }}"
-          path: _release/bin/stack
+          name: linux
+          path: _release
 
   MacOS:
     runs-on: macOS-latest
@@ -82,14 +100,16 @@ jobs:
 
       - name: Test
         run: |
+          set -ex
           export STACK_ROOT=$(pwd)/.stack-root
           curl -sSL https://get.haskellstack.org/ | sh
-          stack test --haddock --no-haddock-deps --local-bin-path _release/bin --copy-bins
+          stack etc/scripts/release.hs check
+          stack etc/scripts/release.hs build
 
       - uses: actions/upload-artifact@v1
         with:
           name: macos
-          path: _release/bin/stack
+          path: _release
 
   Windows:
     runs-on: windows-latest
@@ -110,10 +130,10 @@ jobs:
         run: |
           export STACK_ROOT=$(pwd)/.stack-root
           curl -sSkL http://www.stackage.org/stack/windows-x86_64 -o /usr/bin/stack.zip
-          unzip -o /usr/bin/stack.zip -d /usr/bin/
-          stack test --haddock --no-haddock-deps --local-bin-path _release/bin --copy-bins
+          stack etc/scripts/release.hs check
+          stack etc/scripts/release.hs build
 
       - uses: actions/upload-artifact@v1
         with:
           name: windows
-          path: _release/bin/stack.exe
+          path: _release
